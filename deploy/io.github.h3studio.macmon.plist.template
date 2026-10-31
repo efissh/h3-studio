@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>io.github.h3studio.macmon</string>
+<!-- Optional temperature/power source. ALWAYS pass --host 127.0.0.1: macmon's default is 0.0.0.0. -->
+<key>ProgramArguments</key><array>
+  <string>/opt/homebrew/bin/macmon</string><string>serve</string><string>--host</string><string>127.0.0.1</string>
+  <string>--port</string><string>9197</string><string>--interval</string><string>2000</string>
+</array>
+<key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>10</integer>
+<key>StandardOutPath</key><string>__ROOT__/logs/macmon.log</string>
+<key>StandardErrorPath</key><string>__ROOT__/logs/macmon.log</string>
+</dict></plist>

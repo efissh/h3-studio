@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>H3 视频工作台</title>
+<meta name="theme-color" content="#202e40" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="H3 Studio">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" sizes="180x180" href="/pwa/icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/pwa/icon-192.png">
+<script>try{const t=localStorage.getItem('h3studio-theme');if(t==='dark'||t==='light')document.documentElement.dataset.theme=t}catch(_){}</script>
+<style>
+/* H3 Studio · compact graphite cockpit. Every color has a light + dark token. */
+:root {
+  color-scheme: light;
+  --bg:#f4f6f9;--card:#ffffff;--card-alt:#f9fbfe;--control:#f7f9fc;
+  --fg:#192536;--mut:#667487;--mut-2:#93a0b1;--line:#e2e8f0;--line-soft:#edf1f6;
+  --acc:#3377eb;--acc-2:#215dd0;--acc-wash:rgba(51,119,235,.08);
+  --ok:#178457;--bad:#d14a61;--warn:#a7722a;
+  --header:rgba(255,255,255,.96);--ring-track:#e5ebf3;
+  --shadow:0 10px 36px rgba(31,53,81,.045);
+}
+:root[data-theme="dark"] {
+  color-scheme:dark;
+  --bg:#111925;--card:#202e40;--card-alt:#27364b;--control:#172538;
+  --fg:#f6f9ff;--mut:#c3d0e2;--mut-2:#a8bad0;--line:#526781;--line-soft:#3b4e68;
+  --field-line:#7489a3;--acc:#92bdff;--acc-2:#5595ff;--acc-wash:rgba(139,185,255,.17);
+  --ok:#86e0b5;--bad:#ff9cab;--warn:#ffd18b;
+  --header:rgba(27,39,55,.98);--ring-track:#4e637f;
+  --shadow:0 12px 42px rgba(0,0,0,.17);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme:dark;
+    --bg:#111925;--card:#202e40;--card-alt:#27364b;--control:#172538;
+    --fg:#f6f9ff;--mut:#c3d0e2;--mut-2:#a8bad0;--line:#526781;--line-soft:#3b4e68;
+    --field-line:#7489a3;--acc:#92bdff;--acc-2:#5595ff;--acc-wash:rgba(139,185,255,.17);
+    --ok:#86e0b5;--bad:#ff9cab;--warn:#ffd18b;
+    --header:rgba(27,39,55,.98);--ring-track:#4e637f;
+    --shadow:0 12px 42px rgba(0,0,0,.17);
+  }
+}
+* {box-sizing:border-box}
+html {scrollbar-gutter:stable}
+body {
+  margin:0;min-height:100vh;background:var(--bg);color:var(--fg);
+  font:15px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Microsoft YaHei",sans-serif;
+  -webkit-font-smoothing:antialiased;
+  font-variant-numeric:tabular-nums;
+}
+button,select,input,textarea{font:inherit}
+button,select{cursor:pointer}
+button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible,
+.mcard:focus-within {outline:2px solid var(--acc);outline-offset:3px}
+::selection{background:var(--acc-wash);color:var(--fg)}
+.hide,.sr-only {position:absolute!important}
+.hide{display:none!important}
+.sr-only{width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.meta{font-size:13px;color:var(--mut)}
+.warn{font-size:13px;color:var(--warn)}
+/* Shown only when a touch browser renders the page wider than the screen (e.g. Chrome "Desktop site") or zoomed out. */
+.scale-hint{display:flex;gap:12px;align-items:flex-start;margin:14px 0 0;padding:12px 14px;border:1px solid var(--warn);border-radius:12px;background:var(--card);color:var(--fg);line-height:1.55}
+.scale-hint-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;font-size:14px;overflow-wrap:anywhere}
+.scale-hint-copy strong{font-size:15px;color:var(--fg)}   /* the border carries the warning colour; light-theme --warn text is below 4.5:1 */
+.scale-hint-copy small{font-size:12px;color:var(--mut)}
+.scale-hint button{flex:none;min-height:44px;padding:0 16px}
+/* The whole six-metric board lives inside a single desktop header row. */
+.topbar {
+  position:sticky;top:0;z-index:8;
+  display:grid;grid-template-columns:150px minmax(600px,1fr) auto;
+  align-items:center;column-gap:17px;min-height:69px;
+  padding:9px clamp(18px,2.6vw,42px);
+  background:var(--header);border-bottom:1px solid var(--line);
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+}
+.brand{display:flex;align-items:center;gap:10px;min-width:0;white-space:nowrap}
+.brand-mark{
+  display:grid;place-items:center;flex:0 0 36px;height:36px;
+  font-weight:800;font-size:13px;letter-spacing:-.8px;
+  color:#fff;background:linear-gradient(145deg,#4d98ff,#2853b1);
+  border:1px solid rgba(255,255,255,.15);border-radius:11px;
+  box-shadow:0 4px 14px rgba(53,106,206,.18);
+}
+.brand-copy{display:flex;flex-direction:column;line-height:1.1;gap:6px;min-width:0}
+.brand-copy b{font-size:16px;letter-spacing:-.55px;font-weight:720}
+.brand-copy small{font-size:10px;letter-spacing:1px;font-weight:700;color:var(--mut-2)}
+.head-metrics{
+  display:flex;justify-content:center;align-items:center;
+  gap:0;min-width:0;overflow:hidden;white-space:nowrap
+}
+.metric-item{
+  display:flex;align-items:center;gap:7px;flex:1 1 0;min-width:0;
+  min-height:40px;padding:0 10px;
+  border-left:1px solid var(--line-soft);
+}
+.metric-item:first-child{border-left:0}
+.metric-item.load{--tone:var(--acc)}
+.metric-item.cpu{--tone:#4ca9ad}
+.metric-item.ram{--tone:#9786e1}
+.metric-ring{
+  position:relative;display:block;flex:0 0 29px;width:29px;height:29px;
+  border-radius:50%;background:conic-gradient(var(--tone) var(--pct,0%),var(--ring-track) 0);
+  transition:background .35s ease;
+}
+.metric-ring::after{
+  content:"";position:absolute;inset:4px;
+  border-radius:50%;background:var(--header)
+}
+.metric-ring.unknown{background:var(--ring-track)}
+.metric-copy{display:flex;flex-direction:column;min-width:0;gap:2px;line-height:1.15}
+.metric-copy small{
+  color:var(--mut-2);font-weight:730;font-size:10px;
+  letter-spacing:1px;line-height:1.2
+}
+.metric-copy strong{
+  color:var(--fg);font-size:16px;font-weight:760;
+  letter-spacing:-.28px;line-height:1.2;white-space:nowrap
+}
+.metric-sub{font-size:11px;color:var(--mut);white-space:nowrap}
+.sensor-dot{width:6px;height:6px;flex:0 0 6px;border-radius:50%;background:var(--mut-2);opacity:.65}
+.metric-item.power .sensor-dot{background:var(--acc);opacity:1}
+.head-actions{display:flex;align-items:center;justify-content:flex-end;gap:9px;white-space:nowrap}
+.install-btn{display:inline-flex;align-items:center;min-height:34px}
+#installDlg{max-width:min(420px,calc(100vw - 28px))}
+#installDlg h3{margin-top:0;font-size:17px}
+#installDlg p{margin:10px 0;color:var(--mut);font-size:13px;line-height:1.6}
+#installDlg strong{color:var(--fg)}
+.engine-summary{display:flex;flex-direction:column;align-items:flex-end;gap:3px;line-height:1.15}
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:670;color:var(--mut)}
+.pill::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--mut-2)}
+.pill.ok{color:var(--ok)}.pill.ok::before{background:var(--ok);box-shadow:0 0 0 3px rgba(60,185,129,.10)}
+.pill.bad{color:var(--bad)}.pill.bad::before{background:var(--bad)}
+.system-meta{color:var(--mut);font-size:11px}
+#theme{
+  width:79px;max-width:none;height:34px;padding:5px 7px;
+  color:var(--mut);background:var(--control);
+  border:1px solid var(--field-line,var(--line));border-radius:8px;font-size:12px
+}
+button.sm{
+  padding:7px 11px;border:1px solid var(--line);border-radius:9px;
+  background:var(--control);color:var(--fg);font-size:12px;font-weight:550;
+  transition:background .18s,border-color .18s,transform .18s
+}
+button.sm:hover{border-color:var(--acc);background:var(--acc-wash)}
+button.sm:active,button.pri:active{transform:translateY(1px)}
+button.sm.red{color:var(--bad)}
+/* Main workspace has breathing room, but no huge hero or monitoring cards. */
+.workspace-shell{max-width:1160px;margin:0 auto;padding:0 22px 55px}
+.workspace-nav{
+  display:flex;gap:5px;width:max-content;max-width:100%;padding:5px;margin:20px 0 22px;
+  border-radius:12px;border:1px solid var(--line);background:var(--card-alt)
+}
+.workspace-nav button{
+  position:relative;min-width:120px;padding:8px 18px;
+  border:0;border-radius:8px;background:transparent;color:var(--mut);
+  font-size:14px;font-weight:630;transition:background .18s,color .18s
+}
+.workspace-nav button:hover{color:var(--fg)}
+.workspace-nav button.on{
+  color:var(--fg);background:var(--card);
+  box-shadow:0 2px 9px rgba(0,0,0,.08),0 0 0 1px var(--line-soft);
+  font-weight:690
+}
+.workspace-heading{
+  display:flex;align-items:flex-end;justify-content:space-between;gap:16px;
+  margin:0 0 16px;padding:0 1px
+}
+.eyebrow{display:block;color:var(--acc);font-weight:750;font-size:11px;letter-spacing:1.75px;margin-bottom:6px}
+.workspace-heading h2{margin:0;font-size:24px;font-weight:735;letter-spacing:-.7px;line-height:1.3}
+.workspace-heading p{font-size:13px;color:var(--mut);margin:5px 0 0}
+.heading-note{display:flex;align-items:center;gap:7px;color:var(--mut-2);font-size:11px;letter-spacing:1.1px;font-weight:680;padding-bottom:5px}
+.heading-note i{height:6px;width:6px;border-radius:50%;background:var(--ok)}
+.card{
+  padding:21px 22px;margin:0 0 14px;
+  border:1px solid var(--line);border-radius:16px;
+  background:var(--card);box-shadow:var(--shadow)
+}
+.card>label:first-child{color:var(--fg);font-size:14px;font-weight:730;letter-spacing:.08px}
+label{display:block;margin:13px 0 6px;color:var(--mut);font-size:13px;font-weight:630}
+textarea,input,select{
+  width:100%;padding:10px 12px;color:var(--fg);
+  border:1px solid var(--field-line,var(--line));border-radius:9px;
+  background:var(--control);outline:none;
+  transition:border-color .18s,box-shadow .18s
+}
+textarea:focus,input:focus,select:focus{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-wash)}
+textarea{min-height:115px;resize:vertical;line-height:1.7}
+textarea::placeholder,input::placeholder{color:var(--mut-2);opacity:1}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:11px}
+button.pri{
+  display:block;width:100%;padding:12px;margin-top:17px;
+  color:#fff;border:1px solid #2e73dd;border-radius:10px;
+  background:linear-gradient(135deg,#387feb,#2464db);
+  font-size:14px;font-weight:720;letter-spacing:.3px;
+  box-shadow:0 5px 16px rgba(42,102,215,.15);
+  transition:filter .2s,transform .18s
+}
+button.pri:hover{filter:brightness(1.075)}
+button.pri:disabled{opacity:.48;cursor:not-allowed}
+.seg{display:flex;gap:8px;flex-wrap:wrap}
+.seg label{
+  display:flex;align-items:center;gap:7px;cursor:pointer;
+  color:var(--fg);margin:0;padding:8px 13px;
+  border:1px solid var(--line);border-radius:9px;
+  background:var(--control);font-size:13px
+}
+.seg label:has(input:checked){border-color:var(--acc);background:var(--acc-wash);color:var(--fg)}
+.seg input{width:auto;margin:0;accent-color:var(--acc)}
+#fastAttention{accent-color:var(--acc)}
+/* Model selector: selected model has a precise blue outline, not a glowing box. */
+.models{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:10px}
+.mcard{
+  display:block;position:relative;margin:0;padding:16px 15px 14px;
+  min-width:0;min-height:134px;
+  border:1px solid var(--line);border-radius:12px;
+  background:var(--card-alt);color:var(--fg);cursor:pointer;
+  transition:border-color .18s,background .18s,transform .18s
+}
+.mcard:hover:not(.off){border-color:var(--acc);transform:translateY(-1px)}
+.mcard.sel{
+  border-color:var(--acc);background:linear-gradient(135deg,var(--acc-wash),var(--card-alt) 72%);
+  box-shadow:inset 0 0 0 1px var(--acc)
+}
+.mcard.sel::after{
+  content:"";position:absolute;right:14px;top:15px;
+  width:15px;height:15px;border-radius:50%;
+  border:4px solid var(--card-alt);background:var(--acc);
+  box-shadow:0 0 0 1px var(--acc)
+}
+.mcard.off{opacity:.79;cursor:not-allowed}
+.mcard b{display:block;padding-right:17px;font-size:14px;font-weight:740;line-height:1.4}
+.mcard .meta{display:block;margin:5px 0 11px;font-size:12px;color:var(--mut);line-height:1.45}
+.tag{
+  display:inline-block;margin:3px 4px 0 0;padding:2px 7px;
+  border:1px solid var(--line);border-radius:6px;
+  font-size:11px;font-weight:610;line-height:1.35
+}
+.tag.on{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 35%,var(--line));background:color-mix(in srgb,var(--ok) 6%,transparent)}
+.tag.no{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 30%,var(--line))}
+.tag.mut{color:var(--mut)}
+.thumbs{display:flex;gap:10px}.thumbs>div{flex:1;min-width:0}
+.thumbs img{max-width:100%;max-height:160px;border-radius:9px;margin-top:7px;border:1px solid var(--line)}
+/* Compact experimental toggle and accessible model radios. */
+.model-radio{position:absolute;opacity:0;width:1px;height:1px;top:10px;right:10px}
+.fast-toggle{
+  display:flex;align-items:center;gap:12px;margin:18px 0 0;padding:12px 14px;
+  border:1px solid var(--line);border-radius:11px;background:var(--card-alt);
+  color:var(--fg);cursor:pointer
+}
+.fast-toggle:has(input:focus-visible){outline:2px solid var(--acc);outline-offset:3px}
+.fast-toggle input{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
+.switch-track{
+  display:block;position:relative;flex:0 0 36px;width:36px;height:21px;border-radius:20px;
+  border:1px solid var(--line);background:var(--ring-track);transition:background .2s
+}
+.switch-track::before{
+  content:"";position:absolute;left:2px;top:2px;width:15px;height:15px;
+  border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.18);transition:transform .2s
+}
+.fast-toggle input:checked + .switch-track{background:var(--acc-2);border-color:var(--acc-2)}
+.fast-toggle input:checked + .switch-track::before{transform:translateX(15px)}
+.switch-copy{display:flex;flex-direction:column;gap:2px}
+.switch-copy strong{font-size:13px;font-weight:740}
+.switch-copy small{font-size:12px;color:var(--mut);font-weight:520}
+.experimental{margin-left:5px;color:var(--warn);font-size:10px;font-weight:750;letter-spacing:.75px}
+.secondary-action{display:block;width:100%;padding:10px;margin-top:9px;border-style:solid!important;color:var(--mut)!important;background:var(--card-alt)!important}
+.secondary-action:hover{color:var(--fg)!important;border-color:var(--acc)!important;background:var(--acc-wash)!important}
+/* Queue, library and modal follow the same editorial system. */
+h3{margin:22px 0 12px;color:var(--fg);font-weight:680;font-size:14px}
+.job{display:flex;align-items:flex-start;gap:14px}
+.job .t{flex:1;min-width:0}
+.job p{margin:6px 0 0;color:var(--fg);line-height:1.55;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.st-failed,.st-cancelled{color:var(--bad)}.st-done{color:var(--ok)}.st-queued{color:var(--warn)}
+.bar{height:7px;margin:12px 0 7px;overflow:hidden;border-radius:7px;background:var(--ring-track)}
+.bar i{display:block;height:100%;border-radius:7px;background:linear-gradient(90deg,var(--acc-2),var(--acc));transition:width .5s}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px}
+.grid .card{padding:0;overflow:hidden;cursor:pointer}
+.grid .card:hover{border-color:var(--acc)}
+.grid img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;background:#000}
+.grid .b{padding:13px}
+dialog{border:1px solid var(--line);border-radius:18px;padding:0;max-width:min(900px,95vw);width:100%;background:var(--card);color:var(--fg);box-shadow:0 36px 95px rgba(0,0,0,.35)}
+dialog::backdrop{background:rgba(3,8,14,.78);backdrop-filter:blur(6px)}
+dialog video{width:100%;display:block;background:#05080d}
+dialog .in{padding:18px 20px}
+#login{max-width:390px;margin:min(22vh,180px) auto;padding:0 16px}
+#login .card{padding:25px}
+#login h2{font-size:23px;letter-spacing:-.7px}
+#login input{height:43px}
+#login button{margin-top:15px}
+@media(min-width:1500px){.topbar{grid-template-columns:195px minmax(630px,1fr) auto}.metric-item{padding:0 13px}.metric-copy strong{font-size:17px}}
+@media(max-width:1220px){
+  .topbar{grid-template-columns:1fr auto;row-gap:9px;padding:11px 24px}
+  .head-actions{grid-column:2;grid-row:1}
+  .head-metrics{grid-column:1/-1;grid-row:2;justify-content:space-between;border-top:1px solid var(--line-soft);padding-top:8px}
+  .metric-item{flex:1 1 0;justify-content:center;min-height:32px}
+}
+@media(max-width:720px){
+  .topbar{padding:9px 13px;column-gap:8px;row-gap:9px}
+  .brand-mark{width:30px;height:30px;flex-basis:30px;border-radius:9px;font-size:11px}
+  .brand-copy b{font-size:13px}.brand-copy small{display:none}
+  .engine-summary{display:none}
+  #theme{width:62px;height:30px;font-size:11px}
+  .head-actions{gap:6px}.logout-btn{padding:5px 8px!important}
+  .install-btn{padding:5px 7px!important;min-height:30px}
+  .head-metrics{justify-content:flex-start;overflow-x:auto;scrollbar-width:none;overscroll-behavior-x:contain;gap:0}
+  .head-metrics::-webkit-scrollbar{display:none}
+  .metric-item{flex:0 0 auto;padding:0 10px;min-width:89px;justify-content:flex-start}
+  .metric-item.sensor{min-width:91px}
+  .metric-item:first-child{padding-left:1px}
+  .metric-ring{width:24px;height:24px;flex-basis:24px}
+  .metric-ring::after{inset:3.4px}
+  .metric-copy strong{font-size:14px}.metric-copy small{font-size:10px}
+  .workspace-shell{padding:0 13px 40px}
+  .workspace-nav{margin:13px 0 20px;width:100%}
+  .workspace-nav button{min-width:0;flex:1;padding:8px 5px;font-size:13px}
+  .workspace-heading h2{font-size:21px}.heading-note{display:none}
+  .card{padding:15px 14px;border-radius:13px}
+  .models{grid-template-columns:1fr;gap:8px}
+  .mcard{min-height:0;padding:12px 13px}
+  .mcard .meta{margin:3px 0 7px}
+  .row{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .seg label{padding:7px 9px;font-size:12px}
+}
+/* Foldable inner screens and medium touch tablets: use real available viewport width.
+   Keep the compact phone layout (<600px) and wide desktop layout unchanged. */
+@media (min-width:600px) and (max-width:1350px),
+       (min-width:1351px) and (pointer:coarse),
+       (min-width:1351px) and (max-aspect-ratio:5/4) {
+  .workspace-shell {
+    width:100%;max-width:none;
+    padding:0 clamp(14px,2vw,30px) 48px;
+  }
+  .workspace-nav {
+    width:min(100%,560px);
+    margin:16px 0 18px;
+  }
+  .workspace-nav button {
+    flex:1 1 0;min-width:0;min-height:44px;
+  }
+  /* Metrics remain accessible when the inner display is not wide enough. */
+  .topbar {
+    grid-template-columns:minmax(0,1fr) auto;
+    gap:9px 14px;padding:10px clamp(14px,2vw,30px);
+  }
+  .head-actions {grid-column:2;grid-row:1;min-width:0}
+  .head-metrics {
+    grid-column:1/-1;grid-row:2;min-width:0;
+    justify-content:space-between;overflow-x:auto;
+    overscroll-behavior-x:contain;scrollbar-width:none;
+    border-top:1px solid var(--line-soft);padding-top:8px;
+  }
+  .head-metrics::-webkit-scrollbar {display:none}
+  .metric-item {
+    flex:1 0 auto;min-width:104px;padding:0 10px;
+  }
+  .metric-item:first-child {padding-left:0}
+  .engine-summary {max-width:230px}
+  .engine-summary .pill,.engine-summary .system-meta {
+    max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .workspace-heading {min-width:0}
+  #tab-gen>.card {min-width:0}
+  .mcard {overflow-wrap:anywhere}
+  .row>div {min-width:0}
+  .row select,.row input {min-width:0}
+  .seg label {min-height:44px}
+  .fast-toggle {min-height:52px}
+  #go {min-height:48px}
+}
+/* Narrow unfolded foldables: full-bleed stacked cards, 2-up models, 3-up controls. */
+@media (min-width:600px) and (max-width:839px) {
+  .models {grid-template-columns:repeat(2,minmax(0,1fr))}
+  .row {grid-template-columns:repeat(3,minmax(0,1fr))}
+  #tab-gen>.card {padding:17px}
+  .workspace-heading h2 {font-size:23px}
+}
+/* Wide unfolded foldables: work on settings alongside model selection.
+   No fake preview/sidebar: existing real controls are simply reflowed. */
+@media (min-width:840px) and (max-width:1350px),
+       (min-width:1351px) and (pointer:coarse),
+       (min-width:1351px) and (max-aspect-ratio:5/4) {
+  #tab-gen {
+    display:grid;
+    grid-template-columns:minmax(0,0.92fr) minmax(0,1.08fr);
+    align-items:start;gap:0 16px;
+  }
+  #tab-gen>.workspace-heading {grid-column:1/-1}
+  #tab-gen>.card {margin:0;padding:18px 18px 20px}
+  #tab-gen .models {grid-template-columns:minmax(0,1fr)}
+  #tab-gen .mcard {min-height:0;padding:13px 14px}
+  #tab-gen .row {grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  #tab-gen textarea {min-height:145px}
+  #tab-gen .seg {gap:6px}
+  #tab-gen .seg label {padding:8px 10px;font-size:12px}
+}
+/* Three compact parameter columns only when the creation pane is wide enough. */
+@media (min-width:1080px) and (max-width:1350px),
+       (min-width:1351px) and (pointer:coarse),
+       (min-width:1351px) and (max-aspect-ratio:5/4) {
+  #tab-gen .row {grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+/* Unfolded portrait / near-square inner displays: width alone is misleading.
+   On a tall screen, a readable full-width workflow works better than two tiny columns. */
+@media (min-width:600px) and (max-width:1350px) and (orientation:portrait),
+       (min-width:1351px) and (orientation:portrait) and (pointer:coarse) {
+  .workspace-shell {
+    width:100%;max-width:none;
+    padding:0 clamp(16px,2.5vw,34px) max(32px,env(safe-area-inset-bottom));
+  }
+  .workspace-nav {width:100%;max-width:none;margin:16px 0 20px}
+  .workspace-nav button {min-height:48px;font-size:15px}
+  .workspace-heading {margin-bottom:18px}
+  .workspace-heading h2 {font-size:clamp(24px,2.7vw,30px)}
+  .workspace-heading p {font-size:14px}
+  #tab-gen {display:block}
+  #tab-gen>.workspace-heading {grid-column:auto}
+  #tab-gen>.card {
+    width:100%;margin:0 0 16px;
+    padding:clamp(18px,2.5vw,28px);
+    border-radius:16px;
+  }
+  #tab-gen .models {
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:clamp(10px,1.5vw,16px);
+  }
+  #tab-gen .mcard {min-height:145px;padding:16px}
+  #tab-gen .mcard b {font-size:16px;line-height:1.45}
+  #tab-gen .mcard .meta {font-size:13px;line-height:1.5}
+  #tab-gen .tag {font-size:12px;line-height:1.4}
+  #tab-gen .card>label:first-child {font-size:16px}
+  #tab-gen .card label {font-size:14px}
+  #tab-gen .row {grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+  #tab-gen .row>div {min-width:0}
+  #tab-gen input:not([type=radio]):not([type=checkbox]):not([type=file]),
+  #tab-gen select {min-height:48px;font-size:15px}
+  #tab-gen textarea {min-height:clamp(150px,18vh,220px);font-size:16px}
+  #tab-gen .seg label {min-height:48px;padding:10px 14px;font-size:14px}
+  #tab-gen .fast-toggle {min-height:58px;padding:14px}
+  #tab-gen .switch-copy strong {font-size:14px}
+  #tab-gen .switch-copy small {font-size:13px}
+  #tab-gen #go {min-height:54px;font-size:16px}
+  #tab-gen #ab {min-height:46px;font-size:14px}
+  .metric-copy small {font-size:11px}
+  .metric-copy strong {font-size:17px}
+}
+/* Landscape unfolded screens keep the side-by-side workspace, with readable inputs. */
+@media (min-width:840px) and (max-width:1350px) and (orientation:landscape),
+       (min-width:1351px) and (orientation:landscape) and (pointer:coarse) {
+  #tab-gen .mcard b {font-size:15px}
+  #tab-gen .mcard .meta {font-size:13px}
+  #tab-gen .tag {font-size:12px}
+  #tab-gen .card>label:first-child {font-size:15px}
+  #tab-gen .row input,#tab-gen .row select {min-height:44px;font-size:14px}
+  #tab-gen .seg label {min-height:44px;font-size:13px}
+  #tab-gen #go {min-height:50px;font-size:15px}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{transition:none!important;animation:none!important}
+}
+</style>
+</head>
+<body>
+<div id="login" class="hide"><div class="card"><h2 style="margin-top:0">H3 视频工作台</h2>
+<label>访问密码</label><input id="pw" type="password" autocomplete="current-password">
+<button class="pri" id="loginBtn">登录</button><p id="loginErr" class="warn"></p></div></div>
+
+<div id="app" class="hide">
+<header class="topbar">
+  <div class="brand" aria-label="H3 视频工作台">
+    <span class="brand-mark" aria-hidden="true">H3</span>
+    <span class="brand-copy"><b>H3 Studio</b><small>LOCAL VIDEO WORKSPACE</small></span>
+  </div>
+  <div class="head-metrics" id="headerMetrics" aria-label="Mac Studio 实时硬件状态">
+    <div class="metric-item load" title="整机 GPU 利用率" aria-label="GPU 整机利用率">
+      <span class="metric-ring" id="gpuBar" aria-hidden="true"></span>
+      <span class="metric-copy"><small>GPU</small><strong id="gpuPct">—</strong></span>
+    </div>
+    <div class="metric-item load cpu" title="整机 CPU 利用率" aria-label="CPU 整机利用率">
+      <span class="metric-ring" id="cpuBar" aria-hidden="true"></span>
+      <span class="metric-copy"><small>CPU</small><strong id="cpuPct">—</strong></span>
+    </div>
+    <div class="metric-item load ram" id="ramMetric" title="整机内存利用率" aria-label="整机内存使用率">
+      <span class="metric-ring" id="ramBar" aria-hidden="true"></span>
+      <span class="metric-copy"><small>RAM</small><strong id="ramPct">—</strong></span>
+      <span id="ramDetail" class="sr-only">— / — GB</span>
+    </div>
+    <div class="metric-item sensor" title="CPU 温度与芯片功率">
+      <span class="sensor-dot" aria-hidden="true"></span>
+      <span class="metric-copy"><small>CPU TEMP</small><strong id="cpuTemp">—</strong><span id="cpuPower" class="metric-sub">— W</span></span>
+    </div>
+    <div class="metric-item sensor" title="GPU 温度与芯片功率">
+      <span class="sensor-dot" aria-hidden="true"></span>
+      <span class="metric-copy"><small>GPU TEMP</small><strong id="gpuTemp">—</strong><span id="gpuPower" class="metric-sub">— W</span></span>
+    </div>
+    <div class="metric-item sensor power" title="系统传感器估计功率（非插座功耗）">
+      <span class="sensor-dot" aria-hidden="true"></span>
+      <span class="metric-copy"><small>SOC POWER</small><strong id="systemPower">—</strong><span id="anePower" class="metric-sub">ANE —</span></span>
+    </div>
+  </div>
+  <div class="head-actions">
+    <div class="engine-summary"><span id="h3pill" class="pill">连接中…</span><span id="sys" class="system-meta"></span></div>
+    <button class="sm install-btn" id="installBtn" type="button" title="在电脑或手机上安装 H3 Studio">安装</button>
+    <select id="theme" aria-label="页面主题" title="页面主题"><option value="auto">自动</option><option value="light">亮色</option><option value="dark">深色</option></select>
+    <button class="sm logout-btn" id="logout">退出</button>
+  </div>
+</header>
+<span id="metricsFoot" class="sr-only" role="status">正在读取 Mac Studio 资源状态…</span>
+<div class="workspace-shell">
+<div id="scaleHint" class="scale-hint hide" role="status" aria-live="polite">
+  <div class="scale-hint-copy"><strong id="scaleHintTitle">页面可能被浏览器缩小了</strong><span id="scaleHintText"></span><small id="scaleHintDiag"></small></div>
+  <button class="sm" id="scaleHintClose" type="button">知道了</button>
+</div>
+<nav class="workspace-nav" aria-label="主导航"><button data-tab="gen" class="on">创作台</button><button data-tab="jobs">任务队列 <span id="cnt"></span></button><button data-tab="lib">作品库</button></nav>
+<main>
+<section id="tab-gen">
+<div class="workspace-heading"><div><span class="eyebrow">CREATIVE WORKSPACE / 01</span><h2>视频创作</h2><p>选择模型，设定镜头，然后交给本地 M5 Ultra。</p></div><span class="heading-note"><i></i> LOCAL RENDERING</span></div>
+<div class="card"><label style="margin-top:0">模型</label><div id="models" class="models"><span class="meta">加载中…</span></div>
+<label>计算模式（实测通过或用户明确启用；INT8 缓存须已构建）</label><select id="cmode"></select><div id="cmodeNote" class="meta" style="margin-top:4px"></div>
+<p id="modelErr" class="warn"></p></div>
+<div class="card">
+<label style="margin-top:0">生成方式</label>
+<div class="seg" id="kind"><label><input type="radio" name="kind" value="t2v" checked>文生视频</label><label><input type="radio" name="kind" value="i2v">首帧图生视频</label><label><input type="radio" name="kind" value="fl2v">首尾帧图生视频</label></div>
+<div id="frames" class="thumbs hide">
+<div><label>首帧图片</label><input type="file" id="ff" accept="image/png,image/jpeg,image/webp"><img id="ffp" class="hide"></div>
+<div id="lfBox" class="hide"><label>尾帧图片</label><input type="file" id="lf" accept="image/png,image/jpeg,image/webp"><img id="lfp" class="hide"></div></div>
+<label>提示词(中英文均可)</label><textarea id="prompt" placeholder="例如:一只红狐在松林雪地中漫步,清晨柔光,远处有鸟鸣"></textarea>
+<div class="row">
+<div><label>画幅</label><select id="shape"><option value="landscape">横屏</option><option value="portrait">竖屏</option><option value="square">方形</option></select></div>
+<div><label>尺寸</label><select id="size"><option value="small">小</option><option value="medium" selected>中</option><option value="large">大</option></select></div>
+<div><label>时长(秒)</label><input id="seconds" type="number" min="1" max="15" value="5"></div>
+<div><label>Steps</label><input id="steps" type="number" min="3" max="40" value="20"></div>
+<div><label>Seed(留空=随机)</label><input id="seed" inputmode="numeric" placeholder="随机"></div>
+<div><label>模式</label><select id="speed"><option value="quality">Quality 质量</option><option value="fast">Fast 快速</option><option value="fastest">Fastest 最快</option></select></div>
+</div><label class="fast-toggle"><input id="fastAttention" type="checkbox" checked>
+  <span class="switch-track" aria-hidden="true"></span>
+  <span class="switch-copy"><strong>M5 Fast mode <span class="experimental">EXPERIMENTAL</span></strong>
+  <small>默认开启 · 与 INT8 缓存独立；可能改变生成画面</small></span>
+</label>
+<button class="pri" id="go">生成</button>
+<button class="sm secondary-action" id="ab" title="同提示词、同 Seed、同参数，依次用多个模型各生成一次">A/B 对比 · 用可用模型分别生成</button><p id="goErr" class="warn"></p>
+</div></section>
+
+<section id="tab-jobs" class="hide"><div id="active"></div><h3>已结束</h3><div id="ended"></div></section>
+<section id="tab-lib" class="hide"><div id="libBody"></div></section>
+</main>
+</div>
+</div>
+
+<dialog id="installDlg" aria-labelledby="installTitle"><div class="in">
+<h3 id="installTitle">安装 H3 Studio</h3>
+<p><strong>电脑 Chrome / Edge：</strong>使用地址栏的安装图标，或打开浏览器右上角“⋮”菜单，选择“安装 H3 Studio”或“安装网页为应用”；如果没有安装提示，可在菜单中选择“将网页安装为应用”。</p>
+<p><strong>iPhone / iPad：</strong>在 Safari 中打开网页，点击“分享” → “添加到主屏幕”，并选择“作为网页 App 打开”。</p>
+<p><strong>Android：</strong>在 Chrome 中点击右上角“⋮” → “安装应用”或“添加到主屏幕”。</p>
+<p>网页应用需要安全连接：本机的 http://127.0.0.1 可以直接安装；通过网络访问时请使用 HTTPS 地址（例如启用 Tailscale Serve 后的地址）。安装后仍需先启动 H3 Studio 并登录；不支持离线生成或离线访问视频。</p>
+<button class="sm" id="installClose" type="button">知道了</button>
+</div></dialog>
+<dialog id="dlg"><video id="vid" controls playsinline></video><video id="vid2" controls playsinline class="hide"></video><div class="in"><div id="dmeta"></div><div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap" id="dbtn"></div></div></dialog>
+
+<script>
+const $=s=>document.querySelector(s);
+// Install is initiated by the user on desktop or mobile; keep the private workspace online-only.
+let deferredInstallPrompt=null;
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstallPrompt=e});
+const installBtn=$('#installBtn'),installDlg=$('#installDlg');
+if(window.matchMedia('(display-mode: standalone)').matches||navigator.standalone===true)installBtn.classList.add('hide');
+window.addEventListener('appinstalled',()=>{deferredInstallPrompt=null;installBtn.classList.add('hide')});
+installBtn.onclick=()=>{
+  if(deferredInstallPrompt){
+    const e=deferredInstallPrompt;deferredInstallPrompt=null;
+    try{e.prompt()}catch(_){installDlg.showModal()}
+  }else installDlg.showModal()
+};
+$('#installClose').onclick=()=>installDlg.close();
+installDlg.onclick=e=>{if(e.target===installDlg)installDlg.close()};
+const api=async(path,opt={})=>{
+  opt.headers=Object.assign({'X-Requested-With':'h3studio'},opt.headers||{});
+  if(opt.json){opt.method=opt.method||'POST';opt.headers['Content-Type']='application/json';opt.body=JSON.stringify(opt.json)}
+  const r=await fetch(path,opt);
+  if(r.status===401&&path!=='/api/login'){showLogin();throw new Error('401')}
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(d.detail||d.error||('HTTP '+r.status));
+  return d};
+const ST={queued:'排队中',running:'生成中',done:'完成',failed:'失败',cancelled:'已取消'};
+const fmt=s=>{s=Math.round(s||0);return s>=60?Math.floor(s/60)+'分'+String(s%60).padStart(2,'0')+'秒':s+'秒'};
+const dt=t=>new Date(t*1000).toLocaleString('zh-CN',{hour12:false});
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let timer,S=null,MODELS=[],selModel=null;
+const themeEl=$('#theme');
+function setTheme(v){const t=['auto','light','dark'].includes(v)?v:'auto';if(t==='auto')document.documentElement.removeAttribute('data-theme');else document.documentElement.dataset.theme=t;themeEl.value=t}
+let initialTheme='auto';try{initialTheme=localStorage.getItem('h3studio-theme')||'auto'}catch(_){}setTheme(initialTheme);
+themeEl.onchange=()=>{setTheme(themeEl.value);try{localStorage.setItem('h3studio-theme',themeEl.value)}catch(_){}};
+function metric(id,v){const n=(typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=100)?v:null;$('#'+id+'Pct').textContent=n===null?'—':n.toFixed(0)+'%';
+  const ring=$('#'+id+'Bar');ring.style.setProperty('--pct',(n===null?0:n)+'%');ring.classList.toggle('unknown',n===null)}
+function sensorValue(v,unit){return(typeof v==='number'&&Number.isFinite(v))?v.toFixed(1)+unit:'—'}
+function renderMetrics(system){const m=system?.metrics||{};metric('gpu',m.gpu_pct);metric('cpu',m.cpu_pct);metric('ram',m.memory_pct);
+  const ramText=(typeof m.memory_used_gb==='number'&&typeof m.memory_total_gb==='number')?m.memory_used_gb.toFixed(1)+' / '+m.memory_total_gb.toFixed(1)+' GB':'内存数据不可用';
+  $('#ramDetail').textContent=ramText;
+  $('#ramMetric').title='整机内存 · '+ramText;
+  $('#cpuTemp').textContent=sensorValue(m.cpu_temp_c,' °C');
+  $('#gpuTemp').textContent=sensorValue(m.gpu_temp_c,' °C');
+  $('#cpuPower').textContent=sensorValue(m.cpu_power_w,' W');
+  $('#gpuPower').textContent=sensorValue(m.gpu_power_w,' W');
+  $('#systemPower').textContent=sensorValue(m.system_power_w,' W');
+  $('#anePower').textContent='ANE '+sensorValue(m.ane_power_w,' W');
+  const sampled=m.sampled_at?'采样 '+new Date(m.sampled_at*1000).toLocaleTimeString('zh-CN',{hour12:false})+' · ':'';
+  const note=sampled+'整机监控；macmon 芯片功率为传感器估算，并非墙插功耗；缺失值显示 —';
+  $('#metricsFoot').textContent=note;$('#headerMetrics').title=note;}
+const fmtGB=b=>b?(b/1e9).toFixed(1)+' GB':'—';
+const mname=(id,j)=>(MODELS.find(m=>m.id===id)||{}).display_name||(j&&j.model_info&&j.model_info.display)||id||'—';
+const modelGone=j=>!!j&&!MODELS.some(m=>m.id===j.model_id);
+async function loadModels(){try{const r=await api('/api/models');MODELS=r.models;if(!selModel||!MODELS.find(m=>m.id===selModel&&m.available))selModel=(MODELS.find(m=>m.id===r.default&&m.available)||MODELS.find(m=>m.available)||{}).id||null;renderModels()}catch(e){}}
+const CM={resident:'Resident 常驻(无缓存)',attentionCache:'Fast INT8 缓存',ssdStreaming:'SSD 流式(低内存)'};   // fallback labels; the server sends mode_labels
+function renderCmode(){const m=MODELS.find(x=>x.id===selModel);const sel=$('#cmode');const keep=sel.value;
+  sel.innerHTML=(m&&!m.default_mode_available?'<option value="">默认 INT8 不可用：构建缓存或明确选择 Resident</option>':'')+
+    (m?m.compute_modes:[]).map(k=>`<option value="${k}">${esc((m.mode_labels&&m.mode_labels[k])||CM[k]||k)}</option>`).join('');
+  sel.value=(m&&m.compute_modes.includes(keep))?keep:(m&&m.default_mode_available?m.default_compute_mode:'');
+  const st=m&&m.mode_stats&&m.mode_stats[sel.value];
+  $('#cmodeNote').textContent=m?((st&&st.note)||'')+(m.cache_built||!m.supports_int8_cache?'':' · 该模型的 INT8 缓存尚未构建,可在 H3cApp 的 Advanced Settings 里构建'):''}
+$('#cmode').onchange=renderCmode;
+function renderModels(){$('#models').innerHTML=MODELS.map(m=>`<label class="mcard ${m.id===selModel?'sel':''} ${m.available?'':'off'}">
+  <input type="radio" name="model" value="${m.id}" class="model-radio" ${m.available?'':'disabled'} ${m.id===selModel?'checked':''}>
+  <b>${esc(m.display_name)}</b><span class="meta">${esc(m.quantization)}</span>
+  <span>${m.installed?'<span class="tag on">已安装</span>':'<span class="tag no">未安装</span>'}${m.available?'<span class="tag on">可用</span>':'<span class="tag no">不可用</span>'}${m.active?'<span class="tag on">当前已加载</span>':''}<span class="tag mut">占用 ${fmtGB(m.estimated_disk_usage)}</span><span class="tag ${m.supports_int8_cache?'on':'mut'}">INT8 缓存:${esc(m.cache_status)}</span>${m.last_test_seconds?`<span class="tag mut">上次 ${m.last_test_seconds}秒</span>`:''}</span></label>`).join('');
+  document.querySelectorAll('[name=model]').forEach(r=>r.onchange=()=>{selModel=r.value;const m=MODELS.find(x=>x.id===r.value);const d=m.defaults||{};
+    if(d.steps)$('#steps').value=d.steps;if(d.seconds)$('#seconds').value=d.seconds;if(d.speed_mode)$('#speed').value=d.speed_mode;$('#cmode').value='';renderModels()});renderCmode()}
+
+function showLogin(){$('#app').classList.add('hide');$('#login').classList.remove('hide');clearInterval(timer)}
+async function boot(){const s=await fetch('/api/session').then(r=>r.json());if(!s.ok)return showLogin();
+  $('#login').classList.add('hide');$('#app').classList.remove('hide');scaleHintUpdate();refresh();timer=setInterval(refresh,2000)}
+$('#loginBtn').onclick=async()=>{try{await api('/api/login',{json:{password:$('#pw').value}});$('#pw').value='';boot()}catch(e){$('#loginErr').textContent=e.message}};
+$('#pw').onkeydown=e=>{if(e.key==='Enter')$('#loginBtn').click()};
+$('#logout').onclick=async()=>{await api('/api/logout',{method:'POST'});showLogin()};
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x===b));
+  ['gen','jobs','lib'].forEach(t=>$('#tab-'+t).classList.toggle('hide',t!==b.dataset.tab));render()});
+
+document.querySelectorAll('[name=kind]').forEach(r=>r.onchange=()=>{const k=document.querySelector('[name=kind]:checked').value;
+  $('#frames').classList.toggle('hide',k==='t2v');$('#lfBox').classList.toggle('hide',k!=='fl2v')});
+const up={};
+for(const [inp,key,prev] of [['#ff','first_frame','#ffp'],['#lf','last_frame','#lfp']]){
+  $(inp).onchange=async e=>{const f=e.target.files[0];if(!f)return;const fd=new FormData();fd.append('file',f);
+    try{const r=await api('/api/upload',{method:'POST',body:fd});up[key]=r.id;$(prev).src=URL.createObjectURL(f);$(prev).classList.remove('hide')}
+    catch(err){$('#goErr').textContent=err.message;e.target.value=''}}}
+
+function formParams(){if(!selModel)throw new Error('没有可用的模型');const k=document.querySelector('[name=kind]:checked').value;
+  if(!$('#cmode').value)throw new Error('默认 INT8 缓存不可用，请先构建缓存，或手动选择 Resident');
+  const p={model_id:selModel,compute_mode:$('#cmode').value,fast_attention:$('#fastAttention').checked,prompt:$('#prompt').value,shape:$('#shape').value,size:$('#size').value,seconds:$('#seconds').value,steps:$('#steps').value,speed_mode:$('#speed').value,seed:$('#seed').value.trim()};
+  if(k!=='t2v'){if(!up.first_frame)throw new Error('请先上传首帧图片');p.first_frame=up.first_frame}
+  if(k==='fl2v'){if(!up.last_frame)throw new Error('请先上传尾帧图片');p.last_frame=up.last_frame}return p}
+$('#go').onclick=async()=>{$('#goErr').textContent='';$('#go').disabled=true;
+  try{await api('/api/jobs',{json:formParams()});document.querySelector('[data-tab=jobs]').click()}catch(e){$('#goErr').textContent=e.message}
+  $('#go').disabled=false;refresh()};
+
+$('#ab').onclick=async()=>{$('#goErr').textContent='';const av=MODELS.filter(m=>m.available).slice(0,3);
+  if(av.length<2){$('#goErr').textContent='A/B 对比至少需要 2 个可用模型';return}
+  try{const p=formParams();p.model_ids=av.map(m=>m.id);delete p.model_id;await api('/api/jobs/ab',{json:p});document.querySelector('[data-tab=jobs]').click()}catch(e){$('#goErr').textContent=e.message}refresh()};
+async function refresh(){try{S=await api('/api/state');render()}catch(e){}}
+function jobCard(j){const p=j.params;const run=j.status==='running',q=j.status==='queued';
+  let h=`<div class="card"><div class="job"><div class="t"><b class="st-${j.status}">${ST[j.status]}</b> <span class="meta">${esc(mname(j.model_id,j))}${j.ab_group?' · A/B':''} · ${esc(p.size_profile)} · ${p.seconds}s · ${p.steps} steps · ${p.speed_mode}${p.compute_mode?' · '+(CM[p.compute_mode]||p.compute_mode):''} · M5 Fast ${p.fast_attention===true?'ON':'OFF'}${j.seed?' · seed '+j.seed:''}</span><p>${esc(j.prompt)}</p>`;
+  if(run){const el=Date.now()/1000-j.started_at;h+=`<div class="bar"><i style="width:${Math.round((j.progress||0)*100)}%"></i></div><div class="meta">${Math.round((j.progress||0)*100)}% · ${esc(j.stage||'')} · 已用 ${fmt(el)}${j.eta!=null?' · 预计剩余 '+fmt(j.eta):''}</div>`}
+  if(q&&j.note)h+=`<div class="warn">${esc(j.note)}</div>`;
+  if(j.error&&j.status!=='cancelled')h+=`<div class="warn">原因:${esc(j.error)}</div>`;
+  if(j.status==='done')h+=`<div class="meta">耗时 ${fmt(j.gen_seconds)} · ${dt(j.finished_at)}</div>`;
+  h+=`<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">`;
+  if(q||run)h+=`<button class="sm red" onclick="cancelJob('${j.id}')">取消</button>`;
+  if(j.status==='failed'||j.status==='cancelled')h+=`${modelGone(j)?'<button class="sm" disabled title="该模型已不再提供;不会改用其他模型重试">模型已移除</button>':`<button class="sm" onclick="retry('${j.id}',0)">重试</button>`}<button class="sm" onclick="del('${j.id}')">删除</button>`;
+  if(j.status==='done')h+=`<button class="sm" onclick="openJob('${j.id}')">播放</button>`;
+  return h+`</div></div>${j.status==='done'?`<img src="/api/jobs/${j.id}/thumb" width="120" style="border-radius:8px" onclick="openJob('${j.id}')">`:''}</div></div>`}
+function render(){if(!S)return;const ok=S.h3.ok&&S.h3.engine==='ready';
+  const am=MODELS.find(m=>m.active);
+  $('#h3pill').textContent=S.h3.ok?(S.h3.engine==='ready'?'就绪':S.h3.engine)+(am?' · '+am.display_name.split(' —')[0].replace(/^H3 /,''):''):'H3 离线';
+  $('#h3pill').className='pill '+(ok?'ok':'bad');
+  $('#sys').textContent='SSD '+S.system.free_disk_gb+' GB · 压力 '+S.system.free_mem_pct+'%';
+  $('#sys').title='剩余磁盘空间 '+S.system.free_disk_gb+' GB；macOS 内存压力空闲指标 '+S.system.free_mem_pct+'%（不是内存使用率）';
+  renderMetrics(S.system);
+  $('#cnt').textContent=S.active.length?`(${S.active.length})`:'';
+  if(!$('#tab-jobs').classList.contains('hide')){$('#active').innerHTML=S.active.map(jobCard).join('')||'<div class="card meta">没有进行中的任务</div>';
+    $('#ended').innerHTML=S.recent.slice(0,30).map(jobCard).join('')||'<div class="meta">暂无</div>'}
+  if(!$('#tab-lib').classList.contains('hide')){const done=S.recent.filter(j=>j.status==='done');const by={};
+    done.forEach(j=>{const d=new Date(j.finished_at*1000).toLocaleDateString('zh-CN');(by[d]=by[d]||[]).push(j)});
+    $('#libBody').innerHTML=Object.entries(by).map(([d,l])=>`<h3>${d}</h3><div class="grid">${l.map(j=>`<div class="card" onclick="openJob('${j.id}')"><img loading="lazy" src="/api/jobs/${j.id}/thumb"><div class="b"><div class="meta">${j.params.size_profile} · ${j.params.seconds}s · ${fmt(j.gen_seconds)}</div><div style="font-size:13px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${esc(j.prompt)}</div></div></div>`).join('')}</div>`).join('')||'<div class="card meta">作品库还是空的</div>'}}
+async function cancelJob(id){await api(`/api/jobs/${id}/cancel`,{method:'POST'});refresh()}
+async function retry(id,ns){await api(`/api/jobs/${id}/retry`,{json:{new_seed:!!ns}});refresh()}
+async function del(id){if(confirm('删除该记录?(已完成视频的文件也会删除)')){await api(`/api/jobs/${id}`,{method:'DELETE'});refresh()}}
+function openJob(id){const j=[...S.recent,...S.active].find(x=>x.id===id);if(!j)return;
+  $('#vid').src=`/api/jobs/${id}/${j.has_preview?'preview':'video'}`;
+  const mi=j.model_info||{};const partner=j.ab_group?[...S.recent].find(x=>x.ab_group===j.ab_group&&x.id!==j.id&&x.status==='done'):null;
+  $('#vid2').classList.toggle('hide',!partner);if(partner)$('#vid2').src=`/api/jobs/${partner.id}/${partner.has_preview?'preview':'video'}`;else $('#vid2').removeAttribute('src');
+  $('#dmeta').innerHTML=`<div class="meta"><b>${esc(mi.display||mname(j.model_id,j))}</b> · ${esc(mi.quantization||'')} · H3cApp ${esc(mi.h3capp_version||'?')} · 校验:${esc(j.verified||'—')}${j.out_w?' · 输出 '+j.out_w+'×'+j.out_h:''}${partner?'<br>上方为本作品,下方为 A/B 对手:'+esc(mname(partner.model_id,partner)):''}</div><div class="meta">${dt(j.finished_at)} · 耗时 ${fmt(j.gen_seconds)} · ${esc(j.params.size_profile)} · ${j.params.seconds}s · ${j.params.steps} steps · ${j.params.speed_mode}${j.params.compute_mode?' · '+(CM[j.params.compute_mode]||j.params.compute_mode):' · Resident(旧记录)'} · M5 Fast ${j.params.fast_attention===true?'ON':'OFF'} · seed ${j.seed}</div><p>${esc(j.prompt)}</p>`;
+  $('#dbtn').innerHTML=`<a class="sm" style="text-decoration:none;color:inherit;border:1px solid var(--line);border-radius:7px;padding:5px 10px" href="/api/jobs/${id}/video?download=1">下载原始 MP4</a>${modelGone(j)?'<span class="meta">该模型已不再提供,无法再生成</span>':`<button class="sm" onclick="again('${id}',0)">相同参数再生成</button><button class="sm" onclick="again('${id}',1)">换随机 Seed 再生成</button>`}<button class="sm red" onclick="del('${id}');$('#dlg').close()">删除</button>`;
+  $('#dlg').showModal()}
+async function again(id,ns){await retry(id,ns);$('#dlg').close();document.querySelector('[data-tab=jobs]').click()}
+$('#dlg').onclick=e=>{if(e.target===$('#dlg'))$('#dlg').close()};$('#dlg').onclose=()=>{for(const v of ['#vid','#vid2']){$(v).pause();$(v).removeAttribute('src')}};
+/*scaleCheck:start*/
+function scaleCheck(m){
+  const iw=+m.innerW,ih=+m.innerH,sw=+m.screenW,sh=+m.screenH,vv=+m.vvScale>0?+m.vvScale:1;
+  if(!(iw>0&&ih>0&&sw>0&&sh>0))return{scaled:false,layoutScale:1,zoomScale:vv,effective:1,ref:0,cause:null};
+  // Compare the page's layout width with the screen side that is horizontal right now. iOS keeps screen.width fixed
+  // in both orientations and browser toolbars only shrink innerHeight, so using the width side avoids false alarms.
+  const ref=iw<=ih?Math.min(sw,sh):Math.max(sw,sh);
+  const layoutScale=ref/iw,zoomScale=vv;
+  const cause=layoutScale<0.87?'desktop-site':(zoomScale<0.87?'zoomed-out':null);
+  return{scaled:cause!==null,layoutScale,zoomScale,effective:layoutScale*zoomScale,ref,cause}}
+/*scaleCheck:end*/
+function scaleHintUpdate(ov){
+  const el=$('#scaleHint');if(!el)return;
+  const vvp=window.visualViewport;
+  const m=Object.assign({innerW:innerWidth,innerH:innerHeight,screenW:screen.width,screenH:screen.height,vvScale:vvp?vvp.scale:1},ov||{});
+  const coarse=ov?true:matchMedia('(pointer:coarse)').matches;   // touch-first devices only: a desktop window may span monitors
+  const r=scaleCheck(m);let off=false;try{off=sessionStorage.getItem('h3studio-scale-hint')==='off'}catch(_){}
+  const show=coarse&&r.scaled&&!off&&!$('#app').classList.contains('hide');
+  el.classList.toggle('hide',!show);if(!show)return;
+  const pct=Math.round(r.effective*100);
+  $('#scaleHintTitle').textContent=r.cause==='desktop-site'?'页面被按桌面宽度排版并缩小了':'页面被缩小了';
+  $('#scaleHintText').textContent=r.cause==='desktop-site'
+    ?`页面按 ${Math.round(m.innerW)}px 宽排版,而屏幕只有约 ${Math.round(r.ref)}px,文字和按钮被缩小到约 ${pct}%。这通常是 Chrome 的「桌面版网站」模式:在浏览器菜单(⋮)里取消勾选「桌面版网站」,然后刷新,字体和按钮会恢复正常大小。`
+    :`页面当前被缩小到约 ${pct}%(可能是双指缩小)。双指放大或刷新页面即可恢复。`;
+  $('#scaleHintDiag').textContent=`诊断:innerWidth ${Math.round(m.innerW)} · innerHeight ${Math.round(m.innerH)} · screen ${m.screenW}×${m.screenH} · DPR ${devicePixelRatio} · 缩放 ${(+m.vvScale||1).toFixed(2)}`}
+$('#scaleHintClose').onclick=()=>{try{sessionStorage.setItem('h3studio-scale-hint','off')}catch(_){}$('#scaleHint').classList.add('hide')};
+let scaleTimer;const scaleSoon=()=>{clearTimeout(scaleTimer);scaleTimer=setTimeout(()=>scaleHintUpdate(),300)};
+addEventListener('resize',scaleSoon);addEventListener('orientationchange',scaleSoon);if(window.visualViewport)visualViewport.addEventListener('resize',scaleSoon);
+window.__h3ScaleCheck=scaleCheck;window.__h3ScaleHint=scaleHintUpdate;   // diagnostics: run in the console on the device
+setInterval(()=>{if(!$('#app').classList.contains('hide'))loadModels()},6000);
+boot().then(loadModels);
+</script>
+</body></html>

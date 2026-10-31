@@ -1,0 +1,33 @@
+# Your data: never commit (passwords, session secret, prompts, uploads, videos, database)
+data/
+logs/
+.env
+.env.*
+*.token
+api-token
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.db
+# Models, caches and media
+*.gguf
+*.safetensors
+*.cache
+*.mp4
+*.mov
+*.m4v
+*.part
+downloads/
+models/
+# Environments, caches, build output
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+dist/
+build/
+bench/out*/
+.DS_Store
+# Local scratch
+tmp/

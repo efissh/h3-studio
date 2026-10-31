@@ -1,0 +1,27 @@
+{
+  "id": "/",
+  "name": "H3 Studio — 私人视频工作台",
+  "short_name": "H3 Studio",
+  "description": "本地 Apple Silicon Mac 上的 H3 视频生成工作台",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#111925",
+  "theme_color": "#202e40",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "/pwa/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/pwa/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 5 * * 1"        # weekly: new advisories appear without any code change
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: tests (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.10", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install ffmpeg
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then brew install ffmpeg; else sudo apt-get update && sudo apt-get install -y ffmpeg; fi
+      - name: Install dependencies
+        run: python -m pip install -r requirements-dev.txt
+      - name: Test suite (includes end-to-end run against the mock engine)
+        run: python -m pytest -q -rs
+      - name: Scripts parse
+        run: |
+          bash -n install.sh
+          bash -n bin/h3studio
+          python -m compileall -q app tools bench
+      - name: LaunchAgent templates are valid plists
+        if: runner.os == 'macOS'
+        run: plutil -lint deploy/*.template
+
+  audit:
+    name: release audit (secrets, private identifiers, forbidden files)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python tools/audit_public.py
+      - name: Static security analysis (bandit, medium and above)
+        run: |
+          python -m pip install bandit
+          bandit -r app tools bench -ll -q
+      - name: Known-vulnerability scan of dependencies (pip-audit)
+        # The five starlette advisories below were reviewed and do not apply to how this app uses starlette
+        # (no request.url reconstruction, no request.form(), no StaticFiles, no HTTPEndpoint, not Windows).
+        # See docs/SECURITY-MODEL.md "Dependency advisories". Any other finding fails the build.
+        run: |
+          python -m pip install pip-audit
+          pip-audit -r requirements.txt \
+            --ignore-vuln PYSEC-2026-161 --ignore-vuln PYSEC-2026-248 --ignore-vuln PYSEC-2026-249 \
+            --ignore-vuln PYSEC-2026-2280 --ignore-vuln PYSEC-2026-2281
+      - name: History contains no forbidden files
+        run: |
+          bad=$(git log --all --name-only --pretty=format: | grep -E '\.(gguf|safetensors|cache|mp4|mov|sqlite|db|pem|key|dmg)$|(^|/)(api-token|config\.json|\.env)$' | sort -u || true)
+          if [ -n "$bad" ]; then echo "forbidden files in history:"; echo "$bad"; exit 1; fi

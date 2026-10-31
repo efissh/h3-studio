@@ -1,0 +1,132 @@
+#!/bin/bash
+# H3 Studio control script.  Run `bin/h3studio help`.
+# Local-only by default (127.0.0.1). Nothing here uses sudo, downloads model weights, or touches H3cApp.
+set -u
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PY="${H3STUDIO_PYTHON:-$ROOT/.venv/bin/python}"
+[ -x "$PY" ] || PY="$(command -v python3 || true)"
+HOST="${H3STUDIO_HOST:-127.0.0.1}"
+PORT="${H3STUDIO_PORT:-8195}"
+LABEL="io.github.h3studio.web"
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+LOG="$ROOT/logs/h3studio.log"
+export PYTHONDONTWRITEBYTECODE=1
+
+die() { echo "error: $*" >&2; exit 1; }
+need_venv() { [ -n "$PY" ] && "$PY" -c 'import fastapi, uvicorn' 2>/dev/null || die "Python dependencies are missing: run ./install.sh first"; }
+is_loopback() { case "$1" in 127.*|localhost|::1) return 0;; *) return 1;; esac; }
+guard_host() {
+  if ! is_loopback "$HOST" && [ "${H3STUDIO_ALLOW_LAN:-0}" != "1" ] && [ "${ALLOW_LAN_FLAG:-0}" != "1" ]; then
+    die "refusing to listen on $HOST. H3 Studio is local-only by default. To expose it on your network anyway set H3STUDIO_ALLOW_LAN=1 (read docs/SECURITY-MODEL.md first: there is no TLS)."
+  fi
+}
+listening_pid() { lsof -nP -iTCP:"$PORT" -sTCP:LISTEN -t 2>/dev/null | head -1; }
+is_ours() { [ -n "${1:-}" ] && ps -p "$1" -o command= 2>/dev/null | grep -q "app.main:app"; }
+
+cmd_setup() {
+  need_venv; mkdir -p "$ROOT/data" "$ROOT/logs"
+  "$PY" -m app.config init
+  echo "Config: $ROOT/data/config.json (private, mode 600). Show the password again with: bin/h3studio password"
+}
+cmd_start() {
+  need_venv; guard_host; mkdir -p "$ROOT/data" "$ROOT/logs"
+  local pid; pid="$(listening_pid)"
+  if [ -n "$pid" ]; then is_ours "$pid" && { echo "already running (pid $pid) on $HOST:$PORT"; return 0; }; die "port $PORT is used by another process (pid $pid)"; fi
+  if [ -f "$PLIST" ] && launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1; then launchctl kickstart "gui/$(id -u)/$LABEL"; sleep 2; cmd_status; return; fi
+  ( cd "$ROOT" && nohup "$PY" -m uvicorn app.main:app --host "$HOST" --port "$PORT" >>"$LOG" 2>&1 & )
+  sleep 2; cmd_status
+}
+cmd_stop() {
+  if [ -f "$PLIST" ] && launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1; then launchctl bootout "gui/$(id -u)/$LABEL" 2>&1; echo "stopped LaunchAgent"; return; fi
+  local pid; pid="$(listening_pid)"
+  if is_ours "$pid"; then kill "$pid" && echo "stopped (pid $pid)"; else echo "not running"; fi
+}
+cmd_restart() { cmd_stop >/dev/null 2>&1; for _ in 1 2 3 4 5 6 7 8; do [ -z "$(listening_pid)" ] && break; sleep 1; done; cmd_start; }
+cmd_status() {
+  need_venv
+  local pid; pid="$(listening_pid)"
+  if is_ours "$pid"; then echo "H3 Studio: running (pid $pid) -> http://$HOST:$PORT"; else echo "H3 Studio: not running"; fi
+  [ -f "$PLIST" ] && echo "LaunchAgent: installed ($LABEL)" || echo "LaunchAgent: not installed (optional: bin/h3studio launchagent-install)"
+  "$PY" - <<'EOF'
+import os, sys
+sys.path.insert(0, ".")
+from app.config import config_path
+print("config:", "present" if config_path().exists() else "missing (run bin/h3studio setup)")
+EOF
+}
+cmd_logs() { tail -n "${1:-80}" -f "$LOG"; }
+cmd_run() { need_venv; guard_host; cd "$ROOT" && exec "$PY" -m uvicorn app.main:app --host "$HOST" --port "$PORT" --reload; }
+cmd_doctor() { need_venv; cd "$ROOT" && "$PY" -m app.doctor "$@"; }
+cmd_password() { need_venv; cd "$ROOT" && "$PY" -m app.config password; }
+cmd_rotate() { need_venv; cd "$ROOT" && echo "new password: $("$PY" -m app.config rotate)"; echo "(all sessions are logged out after a restart: bin/h3studio restart)"; }
+
+cmd_launchagent_install() {
+  need_venv; guard_host; mkdir -p "$HOME/Library/LaunchAgents" "$ROOT/logs"
+  sed -e "s#__ROOT__#$ROOT#g" -e "s#__HOST__#$HOST#g" -e "s#__PORT__#$PORT#g" "$ROOT/deploy/io.github.h3studio.web.plist.template" >"$PLIST"
+  plutil -lint "$PLIST" >/dev/null || die "generated plist is invalid"
+  launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+  launchctl bootstrap "gui/$(id -u)" "$PLIST" && echo "installed: starts at login (runs in your user session, no sudo)"
+}
+cmd_launchagent_uninstall() { launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null; rm -f "$PLIST"; echo "LaunchAgent removed"; }
+
+TS_SOCKET_ARG=()
+[ -n "${TS_SOCKET:-}" ] && TS_SOCKET_ARG=(--socket="$TS_SOCKET")
+ts() { tailscale "${TS_SOCKET_ARG[@]+"${TS_SOCKET_ARG[@]}"}" "$@"; }
+cmd_tailscale_on() {
+  need_venv; command -v tailscale >/dev/null || die "tailscale CLI not found (optional feature)"
+  local tsport="${1:-8443}"
+  if ts serve status 2>/dev/null | grep -q ":$tsport "; then die "Tailscale Serve already has a mapping on HTTPS port $tsport; pick another: bin/h3studio tailscale-on <port>. Nothing was changed."; fi
+  is_loopback "$HOST" || die "refusing: Tailscale must proxy to a loopback listener, but H3STUDIO_HOST=$HOST"
+  ts serve --bg --https="$tsport" "http://127.0.0.1:$PORT" || die "tailscale serve failed"
+  ( cd "$ROOT" && "$PY" -m app.config set secure_cookie true >/dev/null )
+  echo "Tailscale Serve (tailnet only, NOT Funnel) is on: https://<this-mac>.<your-tailnet>.ts.net:$tsport"
+  echo "secure_cookie enabled. Restart to apply: bin/h3studio restart. Optional extra access control: docs/SECURITY-MODEL.md"
+}
+cmd_tailscale_off() {
+  need_venv; command -v tailscale >/dev/null || die "tailscale CLI not found"
+  local tsport="${1:-8443}"; ts serve --https="$tsport" off && echo "removed Serve mapping on :$tsport"
+  ( cd "$ROOT" && "$PY" -m app.config set secure_cookie false >/dev/null ); echo "secure_cookie disabled; restart: bin/h3studio restart"
+}
+cmd_demo() {
+  need_venv; command -v ffmpeg >/dev/null || [ -x /opt/homebrew/bin/ffmpeg ] || die "demo needs ffmpeg (brew install ffmpeg)"
+  local D="${TMPDIR:-/tmp}/h3studio-demo"; mkdir -p "$D"
+  echo "Demo mode: a MOCK H3cApp (no GPU, no model) + H3 Studio, in a throw-away data directory: $D"
+  "$PY" "$ROOT/tools/mock_h3capp.py" --dir "$D/mock" --port "${MOCK_PORT:-8421}" --seconds 6 >"$D/mock.log" 2>&1 & MOCK=$!
+  trap 'kill $MOCK $APP 2>/dev/null; echo; echo "demo stopped (data kept in $D)"' EXIT INT TERM
+  sleep 1
+  ( cd "$ROOT" && H3STUDIO_DATA="$D/data" H3C_API_URL="http://127.0.0.1:${MOCK_PORT:-8421}" H3C_TOKEN_FILE="$D/mock/api-token" \
+      exec "$PY" -m uvicorn app.main:app --host 127.0.0.1 --port "${DEMO_PORT:-8196}" >"$D/app.log" 2>&1 ) & APP=$!
+  sleep 3
+  echo "Open http://127.0.0.1:${DEMO_PORT:-8196}   password: $(cd "$ROOT" && H3STUDIO_DATA="$D/data" "$PY" -m app.config password)"
+  echo "Generated videos are test patterns, unrelated to your prompt. Ctrl-C to stop."
+  wait $APP
+}
+cmd_update() {
+  [ -d "$ROOT/.git" ] || die "not a git clone: download the newest release from GitHub and re-run ./install.sh (your data/ directory is kept)"
+  cd "$ROOT" && git pull --ff-only && "$PY" -m pip install -q -r requirements.txt && echo "updated. Restart: bin/h3studio restart"
+}
+
+case "${1:-help}" in
+  setup) cmd_setup;; start) shift; [ "${1:-}" = "--allow-lan" ] && ALLOW_LAN_FLAG=1; cmd_start;; stop) cmd_stop;; restart) cmd_restart;;
+  status) cmd_status;; logs) shift; cmd_logs "$@";; run) cmd_run;; doctor) shift; cmd_doctor "$@";;
+  password) cmd_password;; rotate-password) cmd_rotate;; demo) cmd_demo;; update) cmd_update;;
+  launchagent-install) cmd_launchagent_install;; launchagent-uninstall) cmd_launchagent_uninstall;;
+  tailscale-on) shift; cmd_tailscale_on "$@";; tailscale-off) shift; cmd_tailscale_off "$@";;
+  help|-h|--help|*) cat <<EOF
+H3 Studio  (local-only by default: http://127.0.0.1:8195)
+
+  setup                    create data/config.json with a random password (first run)
+  start | stop | restart   run in the background (or via the LaunchAgent if installed)
+  status | logs [N] | doctor [--json]
+  password | rotate-password
+  run                      foreground with auto-reload (development)
+  demo                     try the UI with a mock H3cApp (no GPU or model needed)
+  launchagent-install | launchagent-uninstall    start at login (optional, no sudo)
+  tailscale-on [port] | tailscale-off [port]     optional HTTPS access inside your tailnet (never Funnel)
+  update                   git pull + refresh dependencies (git clones only)
+
+Environment: H3STUDIO_HOST (127.0.0.1) H3STUDIO_PORT (8195) H3STUDIO_DATA H3STUDIO_ALLOW_LAN=1
+             H3C_API_URL (http://127.0.0.1:8420) H3C_TOKEN_FILE H3C_APP_PATH H3C_SUPPORT_DIR TS_SOCKET
+EOF
+  ;;
+esac

@@ -1,0 +1,41 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Tag matches app version
+        run: |
+          v=$(python -c "import re;print(re.search(r'\"(.+)\"', open('app/__init__.py').read()).group(1))")
+          [ "v$v" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME != app/__init__.py version v$v"; exit 1; }
+      - name: Install
+        run: |
+          brew install ffmpeg
+          python -m pip install -r requirements-dev.txt
+      - name: Tests and audit
+        run: |
+          python -m pytest -q
+          python tools/audit_public.py
+      - name: Build release archive
+        run: |
+          name="h3-studio-${GITHUB_REF_NAME#v}"
+          git archive --format=tar.gz --prefix="$name/" -o "$name.tar.gz" "$GITHUB_REF_NAME"
+          shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256"
+          ls -l "$name".tar.gz*
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          name="h3-studio-${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" "$name.tar.gz" "$name.tar.gz.sha256" --title "H3 Studio ${GITHUB_REF_NAME#v}" --generate-notes
