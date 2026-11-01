@@ -677,7 +677,7 @@ function renderModels(){$('#models').innerHTML=MODELS.map(m=>`<label class="mcar
 
 function showLogin(){$('#app').classList.add('hide');$('#login').classList.remove('hide');clearInterval(timer)}
 async function boot(){const s=await fetch('/api/session').then(r=>r.json());if(!s.ok)return showLogin();
-  $('#login').classList.add('hide');$('#app').classList.remove('hide');scaleHintUpdate();refresh();timer=setInterval(refresh,2000)}
+  $('#login').classList.add('hide');$('#app').classList.remove('hide');scaleHintUpdate();refresh();loadRifeStatus();timer=setInterval(refresh,2000)}
 $('#loginBtn').onclick=async()=>{try{await api('/api/login',{json:{password:$('#pw').value}});$('#pw').value='';boot()}catch(e){$('#loginErr').textContent=e.message}};
 $('#pw').onkeydown=e=>{if(e.key==='Enter')$('#loginBtn').click()};
 $('#logout').onclick=async()=>{await api('/api/logout',{method:'POST'});showLogin()};
