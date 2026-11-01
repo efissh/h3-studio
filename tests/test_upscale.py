@@ -78,15 +78,23 @@ def test_upscale_validation_and_isolated_paths(client):
     assert client.delete(f"/api/upscale/jobs/{jid}", headers=HEADERS).status_code == 200
 
 
-def test_upscale_cannot_exceed_4096(client):
-    jid = upload(client)
-    # 800 x 4 is allowed. A larger source cannot be enlarged that far.
-    main_result = client.post(f"/api/upscale/jobs/{jid}/start",
-                              json={"method": "realESRGANGeneral", "scale": 4}, headers=HEADERS)
-    assert main_result.status_code == 200
-    # A running task cannot be deleted. Cancelling is supported.
-    assert client.delete(f"/api/upscale/jobs/{jid}", headers=HEADERS).status_code == 409
-    assert client.post(f"/api/upscale/jobs/{jid}/cancel", headers=HEADERS).status_code == 200
+def test_upscale_cannot_exceed_4096(client, monkeypatch):
+    monkeypatch.setattr(upscale.subprocess, "run",
+                        lambda *a, **kw: SimpleNamespace(returncode=0, stdout=json.dumps(
+                            {"streams": [{"width": 1500, "height": 900}]})))
+    jid = upload_large(client)
+    r = client.post(f"/api/upscale/jobs/{jid}/start",
+                    json={"method": "realESRGANGeneral", "scale": 4}, headers=HEADERS)
+    assert r.status_code == 400
+    assert client.delete(f"/api/upscale/jobs/{jid}", headers=HEADERS).status_code == 200
+
+
+def upload_large(client):
+    r = client.post("/api/upscale/upload",
+                    files={"file": ("large.mp4", fake_video(), "video/mp4")},
+                    headers=HEADERS)
+    assert r.status_code == 200, r.text
+    return r.json()["id"]
 
 
 def test_upscale_mock_engine_completes(client, monkeypatch):
