@@ -73,3 +73,9 @@ def test_all_interpolation_routes_require_authentication():
     assert code.count("dependencies=[Depends(authed)]") == 5
     assert "urllib.request.urlopen(req, timeout=4)" in code
     assert "os.replace(partial, destination)" in (root / "app/rife_video.py").read_text()
+
+
+def test_frame_extraction_avoids_ffmpeg_flags_removed_in_ffmpeg_9():
+    source = (Path(__file__).resolve().parents[1] / "app" / "rife_video.py").read_text()
+    assert '"-vsync"' not in source
+    assert '"-fps_mode", "passthrough"' in source

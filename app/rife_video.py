@@ -107,7 +107,7 @@ def interpolate_video(source, destination, work, *, ffmpeg, ffprobe, worker,
     errors = work / "ffmpeg-errors.log"
     progress(0.02)
     _run([ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
-          "-i", str(source), "-map", "0:v:0", "-vsync", "0",
+          "-i", str(source), "-map", "0:v:0", "-fps_mode", "passthrough",
           "-start_number", "0", str(frames / "%06d.png")],
          cancel=cancel, timeout=1200, error_log=errors)
     originals = sorted(frames.glob("*.png"))
