@@ -386,8 +386,8 @@ def worker() -> None:
             s = h3_status()
         except H3Error as e:
             set_job(jid, note=str(e)); time.sleep(10); continue
-        if s.get("is_generating"):
-            set_job(jid, note="H3cApp 正忙(可能有手动任务),等待中")
+        if s.get("is_generating") or s.get("upscaling_video"):
+            set_job(jid, note="H3cApp 正忙(生成或视频超分),等待中")
             time.sleep(10); continue
         if not str(s.get("engine_state")) == "ready":
             set_job(jid, note=f"引擎状态: {s.get('engine_state')}"); time.sleep(10); continue
