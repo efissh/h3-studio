@@ -688,10 +688,13 @@ async def thumb(jid: str):
 # load MiniMax H3, and the browser never supplies paths to the engine.
 ENGINE_START_LOCK = threading.RLock()  # shared launch gate for optional RIFE jobs
 from .upscale import register as register_upscale
-register_upscale(app, data_dir=DATA, authed=authed,
+UPSCALE = register_upscale(app, data_dir=DATA, authed=authed,
                  engine_call=lambda *a, **kw: h3(*a, **kw),
                  engine_status=lambda: h3_status(),
-                 ffprobe=FFPROBE, min_free_disk_gb=CFG["min_free_disk_gb"])
+                 ffprobe=FFPROBE, min_free_disk_gb=CFG["min_free_disk_gb"],
+                 engine_gate=ENGINE_START_LOCK,
+                 generation_busy=lambda: INTERPOLATION["busy"]() or bool(q(
+                     "SELECT 1 FROM jobs WHERE status='running' LIMIT 1")))
 
 
 # Optional HQ RIFE frame interpolation. It never replaces or modifies originals.
@@ -711,7 +714,8 @@ INTERPOLATION = register_interpolation(
     engine_gate=ENGINE_START_LOCK,
     generation_busy=lambda: bool(q(
         "SELECT 1 FROM jobs WHERE status='running' LIMIT 1")) or
-        bool(h3_status().get("is_generating") or h3_status().get("upscaling_video")))
+        bool(h3_status().get("is_generating") or h3_status().get("upscaling_video")) or
+        UPSCALE["is_running"]())
 
 @app.get("/manifest.webmanifest", include_in_schema=False)
 async def pwa_manifest():
