@@ -709,7 +709,8 @@ function renderMetrics(system){const m=system?.metrics||{};metric('gpu',m.gpu_pc
 const fmtGB=b=>b?(b/1e9).toFixed(1)+' GB':'—';
 const mname=(id,j)=>(MODELS.find(m=>m.id===id)||{}).display_name||(j&&j.model_info&&j.model_info.display)||id||'—';
 const modelGone=j=>!!j&&!MODELS.some(m=>m.id===j.model_id);
-async function loadModels(){try{const r=await api('/api/models');MODELS=r.models;if(!selModel||!MODELS.find(m=>m.id===selModel&&m.available))selModel=(MODELS.find(m=>m.id===r.default&&m.available)||MODELS.find(m=>m.available)||{}).id||null;renderModels()}catch(e){}}
+let modelsInFlight=false;
+async function loadModels(){if(modelsInFlight||document.hidden)return;modelsInFlight=true;try{const r=await api('/api/models');MODELS=r.models;if(!selModel||!MODELS.find(m=>m.id===selModel&&m.available))selModel=(MODELS.find(m=>m.id===r.default&&m.available)||MODELS.find(m=>m.available)||{}).id||null;renderModels()}catch(e){}finally{modelsInFlight=false}}
 const CM={resident:'Resident 常驻(无缓存)',attentionCache:'Fast INT8 缓存',ssdStreaming:'SSD 流式(低内存)'};   // fallback labels; the server sends mode_labels
 function renderCmode(){const m=MODELS.find(x=>x.id===selModel);const sel=$('#cmode');const keep=sel.value;
   sel.innerHTML=(m&&!m.default_mode_available?'<option value="">默认 INT8 不可用：构建缓存或明确选择 Resident</option>':'')+
@@ -732,7 +733,7 @@ $('#loginBtn').onclick=async()=>{try{await api('/api/login',{json:{password:$('#
 $('#pw').onkeydown=e=>{if(e.key==='Enter')$('#loginBtn').click()};
 $('#logout').onclick=async()=>{await api('/api/logout',{method:'POST'});showLogin()};
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x===b));
-  ['gen','jobs','lib','up','rife'].forEach(t=>$('#tab-'+t).classList.toggle('hide',t!==b.dataset.tab));render();if(b.dataset.tab==='jobs')requestHistory(30);if(b.dataset.tab==='lib')requestHistory(30);if(b.dataset.tab==='up'){loadUpMethods();loadUpJobs()};if(b.dataset.tab==='rife'){requestHistory(30);loadRifeStatus();loadRifeSources();loadRifeJobs()};updateMoreHistory()});
+  ['gen','jobs','lib','up','rife'].forEach(t=>$('#tab-'+t).classList.toggle('hide',t!==b.dataset.tab));render();if(b.dataset.tab==='gen')loadModels();if(b.dataset.tab==='jobs')requestHistory(30);if(b.dataset.tab==='lib')requestHistory(30);if(b.dataset.tab==='up'){loadUpMethods();loadUpJobs()};if(b.dataset.tab==='rife'){requestHistory(30);loadRifeStatus();loadRifeSources();loadRifeJobs()};updateMoreHistory()});
 
 document.querySelectorAll('[name=kind]').forEach(r=>r.onchange=()=>{const k=document.querySelector('[name=kind]:checked').value;
   $('#frames').classList.toggle('hide',k==='t2v');$('#lfBox').classList.toggle('hide',k!=='fl2v')});
@@ -964,7 +965,7 @@ $('#scaleHintClose').onclick=()=>{try{sessionStorage.setItem('h3studio-scale-hin
 let scaleTimer;const scaleSoon=()=>{clearTimeout(scaleTimer);scaleTimer=setTimeout(()=>scaleHintUpdate(),300)};
 addEventListener('resize',scaleSoon);addEventListener('orientationchange',scaleSoon);if(window.visualViewport)visualViewport.addEventListener('resize',scaleSoon);
 window.__h3ScaleCheck=scaleCheck;window.__h3ScaleHint=scaleHintUpdate;   // diagnostics: run in the console on the device
-setInterval(()=>{if(!$('#app').classList.contains('hide'))loadModels()},6000);
+setInterval(()=>{if(!document.hidden&&!$('#app').classList.contains('hide')&&!$('#tab-gen').classList.contains('hide'))loadModels()},60000);
 boot().then(loadModels);
 </script>
 </body></html>
