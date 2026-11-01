@@ -1,6 +1,8 @@
 import Foundation
 import CoreGraphics
 import ImageIO
+import CoreVideo
+import CoreImage
 import UniformTypeIdentifiers
 import RifeMetal
 
@@ -22,7 +24,50 @@ func readPNG(_ path: String) throws -> CGImage {
     }
     return img
 }
-func writePNG(_ image: CGImage, _ path: String) throws {
+func makePixelBuffer(_ image: CGImage) throws -> CVPixelBuffer {
+    let attrs: [String: Any] = [
+        kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA),
+        kCVPixelBufferWidthKey as String: image.width,
+        kCVPixelBufferHeightKey as String: image.height,
+        kCVPixelBufferMetalCompatibilityKey as String: true,
+        kCVPixelBufferIOSurfacePropertiesKey as String: [:] as [String: Any]
+    ]
+    var buffer: CVPixelBuffer?
+    let status = CVPixelBufferCreate(kCFAllocatorDefault, image.width, image.height,
+                                     kCVPixelFormatType_32BGRA, attrs as CFDictionary, &buffer)
+    guard status == kCVReturnSuccess, let buffer = buffer else {
+        throw NSError(domain: "H3RifeStream", code: 6,
+                      userInfo: [NSLocalizedDescriptionKey: "Could not allocate pixel buffer"])
+    }
+    CVPixelBufferLockBaseAddress(buffer, [])
+    defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+    let info = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue |
+                                         CGBitmapInfo.byteOrder32Little.rawValue)
+    guard let context = CGContext(data: CVPixelBufferGetBaseAddress(buffer),
+                                  width: image.width, height: image.height,
+                                  bitsPerComponent: 8,
+                                  bytesPerRow: CVPixelBufferGetBytesPerRow(buffer),
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: info.rawValue) else {
+        throw NSError(domain: "H3RifeStream", code: 7,
+                      userInfo: [NSLocalizedDescriptionKey: "Could not draw image"])
+    }
+    context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+    return buffer
+}
+let ciContext = CIContext(options: [.useSoftwareRenderer: false])
+func writePNG(_ buffer: CVPixelBuffer, _ path: String) throws {
+    let image = CIImage(cvPixelBuffer: buffer)
+    guard let cgImage = ciContext.createCGImage(
+        image, from: CGRect(x: 0, y: 0,
+                            width: CVPixelBufferGetWidth(buffer),
+                            height: CVPixelBufferGetHeight(buffer))) else {
+        throw NSError(domain: "H3RifeStream", code: 8,
+                      userInfo: [NSLocalizedDescriptionKey: "Could not convert output frame"])
+    }
+    try writeCGImage(cgImage, path)
+}
+func writeCGImage(_ image: CGImage, _ path: String) throws {
     let url = URL(fileURLWithPath: path) as CFURL
     guard let destination = CGImageDestinationCreateWithURL(
         url, UTType.png.identifier as CFString, 1, nil
@@ -57,7 +102,8 @@ do {
                               userInfo: [NSLocalizedDescriptionKey: "Invalid timesteps"])
             }
             let result = try interpolator.interpolate(
-                previous: readPNG(item.a), current: readPNG(item.b),
+                previous: try makePixelBuffer(readPNG(item.a)),
+                current: try makePixelBuffer(readPNG(item.b)),
                 timesteps: item.times
             )
             guard result.count == item.outputs.count else {
