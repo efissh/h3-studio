@@ -44,7 +44,7 @@ def stack():
     env = dict(os.environ, PATH=os.environ.get("PATH", "") + ":/opt/homebrew/bin:/usr/local/bin", PYTHONDONTWRITEBYTECODE="1")
     mock = subprocess.Popen([sys.executable, str(ROOT / "tools/mock_h3capp.py"), "--dir", str(tmp / "mock"), "--port", str(mport), "--seconds", "2"],
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
-    app = None
+    app, applog = None, tmp / "app.log"
     try:
         for _ in range(50):
             if (tmp / "mock/api-token").exists():
@@ -53,13 +53,15 @@ def stack():
         env.update(H3STUDIO_DATA=str(tmp / "data"), H3C_API_URL=f"http://127.0.0.1:{mport}", H3C_TOKEN_FILE=str(tmp / "mock/api-token"),
                    H3STUDIO_SECURE_COOKIE="0")
         app = subprocess.Popen([sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(aport)],
-                               cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                               cwd=ROOT, env=env, stdout=applog.open("wb"), stderr=subprocess.STDOUT)
         wait_http(f"http://127.0.0.1:{aport}/manifest.webmanifest", app)
         pw = __import__("json").loads((tmp / "data/config.json").read_text())["password"]
         c = httpx.Client(base_url=f"http://127.0.0.1:{aport}", headers=H, timeout=20)
         assert c.post("/api/login", json={"password": pw}).status_code == 200
         yield c, tmp
     finally:
+        if os.environ.get("E2E_DEBUG") and applog.exists():
+            print("--- app log ---\n" + applog.read_text()[-4000:], flush=True)
         for p in (app, mock):
             if p and p.poll() is None:
                 p.terminate()
@@ -81,6 +83,12 @@ def wait_job(c, jid, until=("done", "failed", "cancelled"), timeout=60):
     raise TimeoutError(jid)
 
 
+def submit(c, **kw) -> str:
+    r = c.post("/api/jobs", json=job(**kw))
+    assert r.status_code in (200, 201, 202), f"{r.status_code} {r.text}"
+    return r.json()["id"]
+
+
 def job(**kw):
     return {"prompt": "a test prompt", "shape": "landscape", "size": "small", "seconds": 1, "steps": 3, "speed_mode": "quality", **kw}
 
@@ -96,7 +104,7 @@ def test_models_are_discovered_with_real_cache_state(stack):
 
 def test_full_job_is_persisted_with_media_and_metadata(stack):
     c, tmp = stack
-    jid = c.post("/api/jobs", json=job(seed=7)).json()["id"]
+    jid = submit(c, seed=7)
     j = wait_job(c, jid)
     assert j["status"] == "done", j.get("error")
     assert j["model_info"]["display"] == "Demo Model A" and j["params"]["compute_mode"] == "attentionCache" and j["params"]["fast_attention"] is True
@@ -112,8 +120,8 @@ def test_switching_models_runs_in_fifo_order_and_never_uses_an_unbuilt_int8_cach
     c, _ = stack
     models = {m["display_name"]: m["id"] for m in c.get("/api/models").json()["models"]}
     assert c.post("/api/jobs", json=job(model_id=models["Demo Model B"], compute_mode="attentionCache")).status_code == 400   # B has no cache
-    first = c.post("/api/jobs", json=job(model_id=models["Demo Model B"], compute_mode="resident")).json()["id"]
-    second = c.post("/api/jobs", json=job(model_id=models["Demo Model A"])).json()["id"]
+    first = submit(c, model_id=models["Demo Model B"], compute_mode="resident")
+    second = submit(c, model_id=models["Demo Model A"])
     j1, j2 = wait_job(c, first), wait_job(c, second)
     assert j1["status"] == j2["status"] == "done" and j1["finished_at"] <= j2["finished_at"]
     assert j1["model_info"]["display"] == "Demo Model B" and j2["model_info"]["display"] == "Demo Model A"
@@ -122,7 +130,7 @@ def test_switching_models_runs_in_fifo_order_and_never_uses_an_unbuilt_int8_cach
 
 def test_cancel_and_security_basics(stack):
     c, _ = stack
-    jid = c.post("/api/jobs", json=job()).json()["id"]
+    jid = submit(c)
     wait_job(c, jid, until=("running", "done"))
     c.post(f"/api/jobs/{jid}/cancel")
     assert wait_job(c, jid)["status"] in ("cancelled", "done")                  # either is legitimate if it raced to the end
