@@ -50,6 +50,12 @@ def stack():
             if (tmp / "mock/api-token").exists():
                 break
             time.sleep(0.1)
+        for _ in range(100):
+            try:
+                socket.create_connection(("127.0.0.1", mport), timeout=1).close()
+                break
+            except OSError:
+                time.sleep(0.1)
         env.update(H3STUDIO_DATA=str(tmp / "data"), H3C_API_URL=f"http://127.0.0.1:{mport}", H3C_TOKEN_FILE=str(tmp / "mock/api-token"),
                    H3STUDIO_SECURE_COOKIE="0")
         (tmp / "data").mkdir()     # CI runners have little free disk/RAM: switch off the resource guards (other keys get defaults)

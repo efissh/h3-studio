@@ -20,6 +20,7 @@ import shutil
 import subprocess
 import threading
 import time
+import socketserver
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -95,6 +96,12 @@ class State:
                 self.result, self.message, self.phase, self.stage = out, None, "Done", "Writing the video file"
             else:
                 self.result, self.message = None, "mock: ffmpeg is required to synthesise the result video"
+
+
+class Server(ThreadingHTTPServer):
+    def server_bind(self) -> None:          # HTTPServer.server_bind does a reverse-DNS lookup that can stall for many seconds
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = "127.0.0.1", self.server_address[1]
 
 
 def make_handler(st: State):
@@ -179,10 +186,10 @@ def main() -> None:
     base = Path(a.dir) if a.dir else Path(tempfile.mkdtemp(prefix="h3-mock-"))      # mkdtemp is private (0700) and unpredictable
     base.mkdir(parents=True, exist_ok=True)
     st = State(base, a.seconds)
-    tok = base / "api-token"
+    srv = Server(("127.0.0.1", a.port), make_handler(st))      # loopback only, always
+    tok = base / "api-token"                                    # written only once the port is open
     tok.write_text(st.token)
     tok.chmod(0o600)
-    srv = ThreadingHTTPServer(("127.0.0.1", a.port), make_handler(st))      # loopback only, always
     print(f"mock H3cApp on http://127.0.0.1:{a.port}  token file: {tok}", flush=True)
     try:
         srv.serve_forever()
