@@ -264,8 +264,8 @@ def register(app, *, data_dir, authed, engine_call, engine_status, ffprobe,
         path = root / jid / (("source" + job["extension"]) if kind == "source" else "enhanced.mp4")
         if not path.is_file() or root.resolve() not in path.resolve().parents:
             raise HTTPException(404)
-        filename = ("upscaled_" if kind == "enhanced" else "original_") + jid[:8] + ".mp4"
-        return FileResponse(path, media_type="video/mp4",
+        filename = ("upscaled_" if kind == "enhanced" else "original_") + jid[:8] + (".mp4" if kind == "enhanced" else job["extension"])
+        return FileResponse(path, media_type="video/quicktime" if kind == "source" and job["extension"] == ".mov" else "video/mp4",
                             filename=filename if download else None,
                             content_disposition_type="attachment" if download else "inline")
 
