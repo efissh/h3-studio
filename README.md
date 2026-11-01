@@ -15,6 +15,22 @@ model really ran, hardware telemetry, and installable PWA access from your phone
 > API are English. Translating is a mechanical job: see [`docs/LOCALIZATION.md`](docs/LOCALIZATION.md).
 
 
+
+## Optional RIFE Metal HQ frame interpolation
+
+The new **AI 插帧** tab processes a completed H3 video as a separate,
+authenticated job. Default: **HQ 60fps**, with 48fps optional. It preserves
+original MP4 and audio and saves the enhanced output independently. Requires an
+optional native Swift worker (RifeMetal 0.1.8 / bundled Practical-RIFE v4.25);
+the web app still runs normally when the worker is not installed.
+
+The app checks the official RifeMetal Releases API after login (cached for
+24 hours) and **notifies about upgrades without installing them**. Review,
+rebuild, benchmark and deploy upgrades manually. No automatic weight
+downloads, background interpolation or GPU benchmarks. See
+[docs/RIFE-INTERPOLATION.md](docs/RIFE-INTERPOLATION.md) for build steps, API,
+disk limits, model provenance and rollback.
+
 ## Features
 
 | | |
