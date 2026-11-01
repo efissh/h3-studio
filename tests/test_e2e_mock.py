@@ -52,6 +52,9 @@ def stack():
             time.sleep(0.1)
         env.update(H3STUDIO_DATA=str(tmp / "data"), H3C_API_URL=f"http://127.0.0.1:{mport}", H3C_TOKEN_FILE=str(tmp / "mock/api-token"),
                    H3STUDIO_SECURE_COOKIE="0")
+        (tmp / "data").mkdir()     # CI runners have little free disk/RAM: switch off the resource guards (other keys get defaults)
+        (tmp / "data/config.json").write_text(__import__("json").dumps({"password": "e2e-" + "x" * 12, "session_secret": "0" * 64,
+                                                                         "min_free_disk_gb": 0, "min_free_mem_pct": 0}))
         app = subprocess.Popen([sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(aport)],
                                cwd=ROOT, env=env, stdout=applog.open("wb"), stderr=subprocess.STDOUT)
         wait_http(f"http://127.0.0.1:{aport}/manifest.webmanifest", app)
