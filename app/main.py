@@ -679,6 +679,15 @@ async def thumb(jid: str):
     return FileResponse(media(jid, "thumb", "image/jpeg"), media_type="image/jpeg")
 
 
+# Standalone upscaling reuses H3cApp's existing video-file API. It does not
+# load MiniMax H3, and the browser never supplies paths to the engine.
+from .upscale import register as register_upscale
+register_upscale(app, data_dir=DATA, authed=authed,
+                 engine_call=lambda *a, **kw: h3(*a, **kw),
+                 engine_status=lambda: h3_status(),
+                 ffprobe=FFPROBE, min_free_disk_gb=CFG["min_free_disk_gb"])
+
+
 @app.get("/manifest.webmanifest", include_in_schema=False)
 async def pwa_manifest():
     return FileResponse(STATIC / "manifest.webmanifest",
