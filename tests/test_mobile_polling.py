@@ -116,3 +116,51 @@ def test_frontend_has_no_overlapping_live_poll():
     assert "/api/jobs/'+id" in s
     assert "loadMoreHistory" in s
     assert "loadRifeSources()" in s
+
+def test_gzip_negotiation_reduces_legacy_state_and_history_without_touching_media(monkeypatch):
+    """Compare actual Content-Length on the HTTP transport, not decoded JSON size."""
+    from app.low_bandwidth import SelectiveJsonGZipMiddleware
+    assert SelectiveJsonGZipMiddleware is not None
+    records = [_job(i) for i in range(72)]
+
+    def fake_q(sql, args=()):
+        if "COUNT(*) AS n" in sql:
+            return [{"n": 72, "created": 171.0, "finished": 191.0}]
+        if "status IN ('queued','running')" in sql:
+            return []
+        if "ORDER BY created_at DESC LIMIT 200" in sql:
+            return records
+        if "ORDER BY created_at DESC LIMIT ? OFFSET ?" in sql:
+            limit, offset = args
+            return records[offset:offset + limit]
+        return []
+
+    monkeypatch.setattr(main, "q", fake_q)
+    monkeypatch.setattr(main, "h3_status", lambda: {"engine_state": "ready"})
+    monkeypatch.setattr(main.METRICS, "read", lambda: {"gpu_pct": 1.0})
+    with TestClient(main.app) as cli:
+        hdr = {"X-Requested-With": "h3studio"}
+        assert cli.post("/api/login", headers=hdr,
+                        json={"password": main.CFG["password"]}).status_code == 200
+        for path in ("/api/state", "/api/jobs/history?limit=30"):
+            compressed = cli.get(path, headers={"Accept-Encoding": "gzip"})
+            uncompressed = cli.get(path, headers={"Accept-Encoding": "identity"})
+            assert compressed.status_code == 200
+            assert uncompressed.status_code == 200
+            assert compressed.headers["content-encoding"] == "gzip"
+            assert "gzip" not in uncompressed.headers.get("content-encoding", "")
+            assert compressed.json() == uncompressed.json()
+            assert int(compressed.headers["content-length"]) < len(uncompressed.content) // 2
+            assert "accept-encoding" in compressed.headers.get("vary", "").lower()
+
+        # FileResponse endpoints must never be transformed by JSON gzip middleware.
+        uid = "e" * 32 + ".png"
+        media = main.UPLOADS / uid
+        media.write_bytes(b"\x89PNG\r\n\x1a\n" + b"z" * 5000)
+        try:
+            response = cli.get("/api/upload/" + uid, headers={"Accept-Encoding": "gzip"})
+            assert response.status_code == 200
+            assert response.content == media.read_bytes()
+            assert "content-encoding" not in response.headers
+        finally:
+            media.unlink(missing_ok=True)
