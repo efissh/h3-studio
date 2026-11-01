@@ -227,7 +227,7 @@ def register(app, *, data_dir, authed, engine_call, engine_status, ffprobe,
     async def upscale_start(jid: str, request: Request):
         body = await request.json()
         method, scale = body.get("method"), body.get("scale")
-        if method not in METHODS or type(scale) not in (float, int) or scale not in SCALES:
+        if not isinstance(method, str) or method not in METHODS or type(scale) not in (float, int) or scale not in SCALES:
             raise HTTPException(400, "超分方式或倍率不正确")
         job = find(jid)
         if max(job["width"] * scale, job["height"] * scale) > 4096:
