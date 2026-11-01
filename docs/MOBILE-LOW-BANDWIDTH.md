@@ -39,6 +39,25 @@ to repair carrier NAT or DERP routing.
   creation tab is visible; duplicate model requests are prevented.
 - No automatic retry of H3 generation POST calls, which could queue duplicates.
 
+## Selective HTTP compression
+
+The legacy 109KB state response was **uncompressed on the wire** in the
+standalone vs embedded Tailscale test. The server now negotiates gzip via
+the browser's normal `Accept-Encoding: gzip` header for selected JSON
+GET endpoints: live state, history, individual job detail, model list,
+upscale jobs and RIFE status/jobs. It uses Starlette's built-in gzip
+middleware at compression level 5 and only for responses >= 512 bytes.
+
+**Do not gzip MP4, thumbnails, uploads, PWA assets or streamed media.**
+Clients that request `Accept-Encoding: identity` get unchanged JSON.
+The previous compact-state/historical-pagination fix remains the main
+bandwidth reduction. Gzip is an additional, backward-compatible saving.
+
+A production validation must measure actual `Content-Encoding`, bytes
+over the wire, `/api/state?compact=1` responsiveness and browser request
+cadence on mobile data. Do not infer real carrier throughput from a local
+unit test, and do not assume DERP speed itself is fixed by compression.
+
 ## Safety, rollback and validation
 
 The code does not change H3cApp, model files, INT8 caches, user media, Clash,
