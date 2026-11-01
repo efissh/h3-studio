@@ -636,13 +636,71 @@ async def delete_job(jid: str):
     return {"ok": True}
 
 
+# Mobile-safe state polling: keep historical objects out of recurring responses.
+# Existing /api/state is preserved for legacy callers; the PWA uses compact=1.
+SUMMARY_PARAMS = ("size_profile", "seconds", "steps", "speed_mode",
+                  "compute_mode", "fast_attention")
+
+def job_summary(row: sqlite3.Row) -> dict:
+    data = job_dict(row)
+    params = data.get("params") or {}
+    model = data.get("model_info") or {}
+    keys = ("id", "status", "created_at", "started_at", "finished_at",
+            "model_id", "seed", "stage", "progress", "eta", "error",
+            "note", "gen_seconds", "has_video", "has_preview",
+            "ab_group", "verified", "out_w", "out_h")
+    return {**{key: data.get(key) for key in keys},
+            "prompt": (data.get("prompt") or "")[:180],
+            "params": {key: params.get(key) for key in SUMMARY_PARAMS},
+            "model_info": {key: model.get(key) for key in
+                           ("display", "quantization", "h3capp_version")}
+                          if model else None}
+
+
+def history_revision() -> str:
+    row = q("""SELECT COUNT(*) AS n, MAX(created_at) AS created,
+               MAX(finished_at) AS finished FROM jobs
+               WHERE status NOT IN ('queued','running')""")[0]
+    return f"{row['n']}:{row['created']}:{row['finished']}"
+
+
+@app.get("/api/jobs/history", dependencies=[Depends(authed)])
+async def job_history(limit: int = 40, offset: int = 0):
+    """Summary-only history. No source paths, full prompts or model snapshots."""
+    if limit < 1 or limit > 200 or offset < 0 or offset > 10000:
+        raise HTTPException(400, "Invalid history pagination")
+    rows = q("""SELECT * FROM jobs WHERE status NOT IN ('queued','running')
+                ORDER BY created_at DESC LIMIT ? OFFSET ?""", (limit, offset))
+    return {"jobs": [job_summary(row) for row in rows],
+            "revision": history_revision(), "limit": limit, "offset": offset}
+
+
+@app.get("/api/jobs/{jid}", dependencies=[Depends(authed)])
+async def job_detail(jid: str):
+    if not re.fullmatch(r"[0-9a-f]{32}", jid):
+        raise HTTPException(404)
+    rows = q("SELECT * FROM jobs WHERE id=?", (jid,))
+    if not rows:
+        raise HTTPException(404)
+    return job_dict(rows[0])
+
+
 @app.get("/api/state", dependencies=[Depends(authed)])
-async def state():
+async def state(compact: int = 0):
     try:
         s = h3_status()
         h3s = {"ok": True, "engine": s.get("engine_state"), "device": s.get("device")}
     except H3Error as e:
         h3s = {"ok": False, "error": str(e)}
+    if compact == 1:
+        active = [job_summary(r) for r in q(
+            "SELECT * FROM jobs WHERE status IN ('queued','running') ORDER BY created_at")]
+        metrics = await asyncio.to_thread(METRICS.read)
+        snapshot = {"h3": h3s, "active": active, "recent": [],
+                    "history_revision": history_revision(),
+                    "system": {"free_disk_gb": round(free_disk_gb(), 1),
+                               "free_mem_pct": free_mem_pct(), "metrics": metrics}}
+        return snapshot
     active = [job_dict(r) for r in q("SELECT * FROM jobs WHERE status IN ('queued','running') ORDER BY created_at")]
     recent = [job_dict(r) for r in q(
         "SELECT * FROM jobs WHERE status NOT IN ('queued','running') ORDER BY created_at DESC LIMIT 200")]
