@@ -545,7 +545,7 @@ dialog .in{padding:18px 20px}
 </div></section>
 
 <section id="tab-jobs" class="hide"><div id="active"></div><h3>已结束</h3><div id="ended"></div></section>
-<section id="tab-lib" class="hide"><div id="libBody"></div></section>
+<section id="tab-lib" class="hide"><div id="libBody"></div><button id="loadMoreHistory" class="sm hide" type="button">加载更多历史作品</button></section>
 <section id="tab-up" class="hide">
   <div class="workspace-heading"><div><span class="eyebrow">VIDEO ENHANCEMENT / 04</span>
     <h2>AI 视频超分</h2><p>上传普通视频即可放大，不调用 H3 视频生成模型，视频只保存在这台 Mac 上。</p></div></div>
@@ -636,6 +636,56 @@ const fmt=s=>{s=Math.round(s||0);return s>=60?Math.floor(s/60)+'分'+String(s%60
 const dt=t=>new Date(t*1000).toLocaleString('zh-CN',{hour12:false});
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let timer,S=null,MODELS=[],selModel=null;
+// History is loaded only when useful, in small pages; live polls never carry it.
+let stateInFlight=false,historyInFlight=false,historyRevision=null;
+let historyWanted=30,historyLoaded=false,historyHasMore=false;
+function historicalTab(){return ['jobs','lib','rife'].some(t=>!$('#tab-'+t).classList.contains('hide'))}
+function updateMoreHistory(){
+  const btn=$('#loadMoreHistory');
+  btn.classList.toggle('hide',!historyLoaded||!historyHasMore);
+}
+async function loadHistory(){
+  if(historyInFlight||!S||$('#app').classList.contains('hide'))return;
+  const reset=historyRevision!==S.history_revision;
+  const offset=reset?0:S.recent.length;
+  if(!reset&&(offset>=historyWanted||!historyHasMore))return;
+  historyInFlight=true;
+  const count=Math.min(30,Math.max(1,historyWanted-offset));
+  let succeeded=false;
+  try{
+    const r=await api('/api/jobs/history?limit='+count+'&offset='+offset);
+    // Discard a page if history changed while this request was travelling.
+    if(!S||r.revision!==S.history_revision)return;
+    S.recent=(reset?[]:S.recent).concat(r.jobs);
+    historyRevision=r.revision;historyLoaded=true;
+    historyHasMore=r.jobs.length===count;
+    succeeded=true;
+    render();updateMoreHistory();
+    if(!$('#tab-rife').classList.contains('hide'))loadRifeSources();
+  }catch(e){console.warn('H3 history page unavailable:',e.message)}
+  finally{
+    historyInFlight=false;
+    // A new tab may have requested a larger history while this page loaded.
+    if(succeeded&&historyHasMore&&S.recent.length<historyWanted)loadHistory();
+  }
+}
+function requestHistory(limit){
+  historyWanted=Math.max(historyWanted,limit);
+  loadHistory();
+}
+function moreHistory(){historyWanted+=30;loadHistory();}
+$('#loadMoreHistory').onclick=moreHistory;
+function scheduleState(delay){
+  clearTimeout(timer);
+  if(!document.hidden&&!$('#app').classList.contains('hide')){
+    timer=setTimeout(refresh,delay);
+  }
+}
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden)clearTimeout(timer);
+  else if(!$('#app').classList.contains('hide'))refresh();
+});
+
 const themeEl=$('#theme');
 function setTheme(v){const t=['auto','light','dark'].includes(v)?v:'auto';if(t==='auto')document.documentElement.removeAttribute('data-theme');else document.documentElement.dataset.theme=t;themeEl.value=t}
 let initialTheme='auto';try{initialTheme=localStorage.getItem('h3studio-theme')||'auto'}catch(_){}setTheme(initialTheme);
@@ -677,12 +727,12 @@ function renderModels(){$('#models').innerHTML=MODELS.map(m=>`<label class="mcar
 
 function showLogin(){$('#app').classList.add('hide');$('#login').classList.remove('hide');clearInterval(timer)}
 async function boot(){const s=await fetch('/api/session').then(r=>r.json());if(!s.ok)return showLogin();
-  $('#login').classList.add('hide');$('#app').classList.remove('hide');scaleHintUpdate();refresh();loadRifeStatus();timer=setInterval(refresh,2000)}
+  $('#login').classList.add('hide');$('#app').classList.remove('hide');scaleHintUpdate();refresh();loadRifeStatus()}
 $('#loginBtn').onclick=async()=>{try{await api('/api/login',{json:{password:$('#pw').value}});$('#pw').value='';boot()}catch(e){$('#loginErr').textContent=e.message}};
 $('#pw').onkeydown=e=>{if(e.key==='Enter')$('#loginBtn').click()};
 $('#logout').onclick=async()=>{await api('/api/logout',{method:'POST'});showLogin()};
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x===b));
-  ['gen','jobs','lib','up','rife'].forEach(t=>$('#tab-'+t).classList.toggle('hide',t!==b.dataset.tab));render();if(b.dataset.tab==='up'){loadUpMethods();loadUpJobs()};if(b.dataset.tab==='rife'){loadRifeStatus();loadRifeSources();loadRifeJobs()}});
+  ['gen','jobs','lib','up','rife'].forEach(t=>$('#tab-'+t).classList.toggle('hide',t!==b.dataset.tab));render();if(b.dataset.tab==='jobs')requestHistory(30);if(b.dataset.tab==='lib')requestHistory(30);if(b.dataset.tab==='up'){loadUpMethods();loadUpJobs()};if(b.dataset.tab==='rife'){requestHistory(30);loadRifeStatus();loadRifeSources();loadRifeJobs()};updateMoreHistory()});
 
 document.querySelectorAll('[name=kind]').forEach(r=>r.onchange=()=>{const k=document.querySelector('[name=kind]:checked').value;
   $('#frames').classList.toggle('hide',k==='t2v');$('#lfBox').classList.toggle('hide',k!=='fl2v')});
@@ -704,7 +754,24 @@ $('#go').onclick=async()=>{$('#goErr').textContent='';$('#go').disabled=true;
 $('#ab').onclick=async()=>{$('#goErr').textContent='';const av=MODELS.filter(m=>m.available).slice(0,3);
   if(av.length<2){$('#goErr').textContent='A/B 对比至少需要 2 个可用模型';return}
   try{const p=formParams();p.model_ids=av.map(m=>m.id);delete p.model_id;await api('/api/jobs/ab',{json:p});document.querySelector('[data-tab=jobs]').click()}catch(e){$('#goErr').textContent=e.message}refresh()};
-async function refresh(){try{S=await api('/api/state');render()}catch(e){}if(!$('#tab-up').classList.contains('hide'))loadUpJobs()}
+async function refresh(){
+  if(stateInFlight||document.hidden||$('#app').classList.contains('hide'))return;
+  stateInFlight=true;
+  let success=false;
+  try{
+    const live=await api('/api/state?compact=1');
+    S={...live,recent:S?.recent||[]};
+    success=true;
+    render();
+    if(historicalTab()&&(!historyLoaded||historyRevision!==S.history_revision))loadHistory();
+    if(!$('#tab-up').classList.contains('hide'))loadUpJobs();
+  }catch(e){console.warn('H3 live status unavailable:',e.message)}
+  finally{
+    stateInFlight=false;
+    const work=!!(S&&(S.active.length||(S.upscale_jobs||[]).some(j=>['queued','running'].includes(j.status))));
+    scheduleState(!success?20000:work?5000:15000);
+  }
+}
 
 const UPLABEL={uploaded:'待开始',running:'处理中',done:'完成',failed:'失败',cancelled:'已取消'};
 let upLoading=false,upMethodsLoaded=false,upLastJobs=null;
@@ -858,7 +925,8 @@ function render(){if(!S)return;const ok=S.h3.ok&&S.h3.engine==='ready';
 async function cancelJob(id){await api(`/api/jobs/${id}/cancel`,{method:'POST'});refresh()}
 async function retry(id,ns){await api(`/api/jobs/${id}/retry`,{json:{new_seed:!!ns}});refresh()}
 async function del(id){if(confirm('删除该记录?(已完成视频的文件也会删除)')){await api(`/api/jobs/${id}`,{method:'DELETE'});refresh()}}
-function openJob(id){const j=[...S.recent,...S.active].find(x=>x.id===id);if(!j)return;
+async function openJob(id){let j=[...S.recent,...S.active].find(x=>x.id===id);if(!j)return;
+  try{j=await api('/api/jobs/'+id)}catch(e){alert('读取视频完整信息失败：'+e.message);return}
   $('#vid').src=`/api/jobs/${id}/${j.has_preview?'preview':'video'}`;
   const mi=j.model_info||{};const partner=j.ab_group?[...S.recent].find(x=>x.ab_group===j.ab_group&&x.id!==j.id&&x.status==='done'):null;
   $('#vid2').classList.toggle('hide',!partner);if(partner)$('#vid2').src=`/api/jobs/${partner.id}/${partner.has_preview?'preview':'video'}`;else $('#vid2').removeAttribute('src');
