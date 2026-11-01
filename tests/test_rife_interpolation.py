@@ -22,7 +22,7 @@ def test_24fps_to_60fps_uses_exact_source_timestamps():
 def test_24fps_to_48fps_keeps_every_source_frame():
     count, originals, pairs = _plan(120, Fraction(24), 48)
     assert count == 240
-    assert len(originals) == 120
+    assert len(originals) == 121  # final output timestamp holds the last source frame
     assert pairs[0] == [(1, 0.5)]
     assert originals[239] == 119
 
