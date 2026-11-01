@@ -514,7 +514,7 @@ dialog .in{padding:18px 20px}
   <div class="scale-hint-copy"><strong id="scaleHintTitle">页面可能被浏览器缩小了</strong><span id="scaleHintText"></span><small id="scaleHintDiag"></small></div>
   <button class="sm" id="scaleHintClose" type="button">知道了</button>
 </div>
-<nav class="workspace-nav" aria-label="主导航"><button data-tab="gen" class="on">创作台</button><button data-tab="jobs">任务队列 <span id="cnt"></span></button><button data-tab="lib">作品库</button></nav>
+<nav class="workspace-nav" aria-label="主导航"><button data-tab="gen" class="on">创作台</button><button data-tab="jobs">任务队列 <span id="cnt"></span></button><button data-tab="lib">作品库</button><button data-tab="up">AI 超分</button></nav>
 <main>
 <section id="tab-gen">
 <div class="workspace-heading"><div><span class="eyebrow">CREATIVE WORKSPACE / 01</span><h2>视频创作</h2><p>选择模型，设定镜头，然后交给本地 M5 Ultra。</p></div><span class="heading-note"><i></i> LOCAL RENDERING</span></div>
@@ -546,6 +546,30 @@ dialog .in{padding:18px 20px}
 
 <section id="tab-jobs" class="hide"><div id="active"></div><h3>已结束</h3><div id="ended"></div></section>
 <section id="tab-lib" class="hide"><div id="libBody"></div></section>
+<section id="tab-up" class="hide">
+  <div class="workspace-heading"><div><span class="eyebrow">VIDEO ENHANCEMENT / 04</span>
+    <h2>AI 视频超分</h2><p>上传普通视频即可放大，不调用 H3 视频生成模型，视频只保存在这台 Mac 上。</p></div></div>
+  <div class="card">
+    <label style="margin-top:0" for="upFile">原始视频（MP4 / MOV / M4V，最大 1 GiB）</label>
+    <input type="file" id="upFile" accept=".mp4,.mov,.m4v,video/mp4,video/quicktime">
+    <div class="row">
+      <div><label for="upMethod">放大方式</label><select id="upMethod">
+        <option value="realESRGANGeneral" selected>Real-ESRGAN General（真人推荐）</option>
+        <option value="realESRGANAnime">Real-ESRGAN Anime（动画）</option>
+        <option value="metalFX">MetalFX（快速）</option>
+        <option value="standard">Standard（普通放大）</option>
+      </select></div>
+      <div><label for="upScale">倍率</label><select id="upScale">
+        <option value="1.5">1.5×</option><option value="2" selected>2×</option>
+        <option value="3">3×</option><option value="4">4×</option>
+      </select></div>
+    </div>
+    <p class="meta">H3cApp 0.6.8+ · 放大后任一边不能超过 4096 像素 · 原视频保留，高清版单独下载。AI 补全的细节不一定真实。</p>
+    <p id="upAvailability" class="meta" role="status"></p>
+    <button class="pri" id="upRun">上传并开始超分</button><p class="warn" id="upError" role="alert"></p>
+  </div>
+  <h3>超分任务与下载</h3><div id="upJobs" aria-live="polite"></div>
+</section>
 </main>
 </div>
 </div>
@@ -635,7 +659,7 @@ $('#loginBtn').onclick=async()=>{try{await api('/api/login',{json:{password:$('#
 $('#pw').onkeydown=e=>{if(e.key==='Enter')$('#loginBtn').click()};
 $('#logout').onclick=async()=>{await api('/api/logout',{method:'POST'});showLogin()};
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x===b));
-  ['gen','jobs','lib'].forEach(t=>$('#tab-'+t).classList.toggle('hide',t!==b.dataset.tab));render()});
+  ['gen','jobs','lib','up'].forEach(t=>$('#tab-'+t).classList.toggle('hide',t!==b.dataset.tab));render();if(b.dataset.tab==='up'){loadUpMethods();loadUpJobs()}});
 
 document.querySelectorAll('[name=kind]').forEach(r=>r.onchange=()=>{const k=document.querySelector('[name=kind]:checked').value;
   $('#frames').classList.toggle('hide',k==='t2v');$('#lfBox').classList.toggle('hide',k!=='fl2v')});
@@ -657,7 +681,65 @@ $('#go').onclick=async()=>{$('#goErr').textContent='';$('#go').disabled=true;
 $('#ab').onclick=async()=>{$('#goErr').textContent='';const av=MODELS.filter(m=>m.available).slice(0,3);
   if(av.length<2){$('#goErr').textContent='A/B 对比至少需要 2 个可用模型';return}
   try{const p=formParams();p.model_ids=av.map(m=>m.id);delete p.model_id;await api('/api/jobs/ab',{json:p});document.querySelector('[data-tab=jobs]').click()}catch(e){$('#goErr').textContent=e.message}refresh()};
-async function refresh(){try{S=await api('/api/state');render()}catch(e){}}
+async function refresh(){try{S=await api('/api/state');render()}catch(e){}if(!$('#tab-up').classList.contains('hide'))loadUpJobs()}
+
+const UPLABEL={uploaded:'待开始',running:'处理中',done:'完成',failed:'失败',cancelled:'已取消'};
+let upLoading=false,upMethodsLoaded=false;
+async function loadUpMethods(){
+  if(upMethodsLoaded)return;
+  try{
+    const result=await api('/api/upscale/methods');
+    if(result.error){$('#upAvailability').textContent=result.error;return}
+    const byId=Object.fromEntries(result.methods.map(m=>[m.id,m]));
+    const opt=$('#upMethod');
+    for(const o of opt.options){
+      const m=byId[o.value];
+      o.disabled=!m||!m.available;
+      if(m&&m.reason&&!m.available)o.title=m.reason;
+    }
+    if(opt.selectedOptions[0]?.disabled){const first=[...opt.options].find(o=>!o.disabled);if(first)opt.value=first.value}
+    $('#upAvailability').textContent='可用超分方式已从本机 H3cApp 确认';
+    upMethodsLoaded=true;
+  }catch(e){$('#upAvailability').textContent='无法读取 H3cApp：'+e.message}
+}
+function upCard(j){
+  const title=esc(j.name),size=esc(j.width+'×'+j.height);
+  let html='<div class="card"><b>'+title+'</b><div class="meta">'+size+' · '+esc(j.method)+' · '+j.scale+'× · '+(UPLABEL[j.status]||esc(j.status))+'</div>';
+  if(j.status==='running')html+='<div class="bar"><i style="width:'+Math.round((j.progress||0)*100)+'%"></i></div><div class="meta">'+Math.round((j.progress||0)*100)+'% · '+esc(j.message||'正在处理…')+'</div><button class="sm red" onclick="upCancel(\''+j.id+'\')">取消</button>';
+  if(j.status==='failed')html+='<p class="warn">'+esc(j.error)+'</p>';
+  if(j.status==='uploaded')html+='<button class="sm" onclick="upStartExisting(\''+j.id+'\')">开始超分</button>';
+  if(j.status==='done')html+='<div style="margin-top:10px"><video controls playsinline preload="none" style="width:100%;max-width:640px;border-radius:10px" src="/api/upscale/jobs/'+j.id+'/enhanced"></video></div><a href="/api/upscale/jobs/'+j.id+'/enhanced?download=1">下载高清 MP4</a> · <a href="/api/upscale/jobs/'+j.id+'/source?download=1">下载原始视频</a>';
+  if(j.status!=='running')html+=' <button class="sm red" onclick="upDelete(\''+j.id+'\')">删除</button>';
+  return html+'</div>';
+}
+async function loadUpJobs(){
+  if(upLoading)return;
+  upLoading=true;
+  try{const r=await api('/api/upscale/jobs');$('#upJobs').innerHTML=r.jobs.length?r.jobs.slice(0,20).map(upCard).join(''):'<div class="card meta">暂无超分任务</div>'}
+  catch(e){$('#upJobs').textContent='超分任务加载失败：'+e.message}finally{upLoading=false}
+}
+async function upStartExisting(id){
+  $('#upError').textContent='';
+  try{await api('/api/upscale/jobs/'+id+'/start',{json:{method:$('#upMethod').value,scale:Number($('#upScale').value)}})}
+  catch(e){$('#upError').textContent=e.message}loadUpJobs()
+}
+$('#upRun').onclick=async()=>{
+  const f=$('#upFile').files[0];
+  if(!f){$('#upError').textContent='请先选择视频文件';return}
+  if(f.size>1024*1024*1024){$('#upError').textContent='视频不能超过 1 GiB';return}
+  const btn=$('#upRun');btn.disabled=true;$('#upError').textContent='';
+  $('#upAvailability').textContent='正在上传 '+f.name+'…';
+  try{const data=new FormData();data.append('file',f);const j=await api('/api/upscale/upload',{method:'POST',body:data});
+    $('#upAvailability').textContent='上传成功，正在启动超分…';
+    await api('/api/upscale/jobs/'+j.id+'/start',{json:{method:$('#upMethod').value,scale:Number($('#upScale').value)}});
+    $('#upAvailability').textContent='任务已提交，可在下方查看进度';$('#upFile').value='';
+  }catch(e){$('#upError').textContent=e.message;$('#upAvailability').textContent='如已上传成功，可在下方重新点击开始'}
+  finally{btn.disabled=false;loadUpJobs()}
+};
+async function upCancel(id){try{await api('/api/upscale/jobs/'+id+'/cancel',{method:'POST'})}catch(e){$('#upError').textContent=e.message}loadUpJobs()}
+async function upDelete(id){if(!confirm('删除这项任务及其本地视频文件？'))return;
+  try{await api('/api/upscale/jobs/'+id,{method:'DELETE'})}catch(e){$('#upError').textContent=e.message}loadUpJobs()}
+
 function jobCard(j){const p=j.params;const run=j.status==='running',q=j.status==='queued';
   let h=`<div class="card"><div class="job"><div class="t"><b class="st-${j.status}">${ST[j.status]}</b> <span class="meta">${esc(mname(j.model_id,j))}${j.ab_group?' · A/B':''} · ${esc(p.size_profile)} · ${p.seconds}s · ${p.steps} steps · ${p.speed_mode}${p.compute_mode?' · '+(CM[p.compute_mode]||p.compute_mode):''} · M5 Fast ${p.fast_attention===true?'ON':'OFF'}${j.seed?' · seed '+j.seed:''}</span><p>${esc(j.prompt)}</p>`;
   if(run){const el=Date.now()/1000-j.started_at;h+=`<div class="bar"><i style="width:${Math.round((j.progress||0)*100)}%"></i></div><div class="meta">${Math.round((j.progress||0)*100)}% · ${esc(j.stage||'')} · 已用 ${fmt(el)}${j.eta!=null?' · 预计剩余 '+fmt(j.eta):''}</div>`}
