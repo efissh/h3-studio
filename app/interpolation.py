@@ -173,6 +173,7 @@ def register(app, *, data_dir, authed, video_for_job, ffmpeg, ffprobe,
                         "release_url": RELEASES}
             update_cache.update(ts=now, data=data)
         return {"available": installed, "engine_version": PINNED_ENGINE if installed else None,
+                "model_version": "4.25" if installed else None,
                 "quality": "hq", "default_fps": 60,
                 "update": update_cache["data"], "manual_update_only": True}
 
