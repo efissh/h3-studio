@@ -386,37 +386,42 @@ def worker() -> None:
             s = h3_status()
         except H3Error as e:
             set_job(jid, note=str(e)); time.sleep(10); continue
-        if s.get("is_generating") or s.get("upscaling_video"):
+        if s.get("is_generating") or s.get("upscaling_video") or INTERPOLATION["busy"]():
             set_job(jid, note="H3cApp 正忙(生成或视频超分),等待中")
             time.sleep(10); continue
         if not str(s.get("engine_state")) == "ready":
             set_job(jid, note=f"引擎状态: {s.get('engine_state')}"); time.sleep(10); continue
-        seed = int(job["seed"]) if job["seed"] else secrets.randbelow(2**32)
-        mid = job["model_id"] or MODELS.default_id()
-        if not mid:
-            fail(jid, "没有可用的模型(请先在 H3cApp 中安装并登记模型)"); continue
-        set_job(jid, stage="准备模型…")
-        try:
-            snap = MODELS.ensure_active(mid)            # GPU is idle here (checked above)
-            set_job(jid, model_info=json.dumps(snap, ensure_ascii=False))
-        except (ModelError, H3Error, httpx.HTTPError) as e:
-            fail(jid, f"模型切换失败(不会自动改用其他模型): {e}"[:500]); continue
-        try:
-            MODELS.validate_mode(mid, params.get("compute_mode") or "resident")
-        except ModelError as e:
-            fail(jid, f"计算模式不可用(不会自动改用其他模式): {e}"[:500]); continue
-        try:
-            r = h3("POST", "/api/generate", json=h3_body(params, seed))
-        except H3Error as e:
-            set_job(jid, note=str(e)); time.sleep(10); continue
-        if r.status_code == 409:
-            set_job(jid, note="H3cApp 正忙,等待中"); time.sleep(10); continue
-        if r.status_code not in (200, 202):
+        with ENGINE_START_LOCK:
+            if INTERPOLATION["busy"]():
+                set_job(jid, note="RIFE 插帧占用 GPU，等待中")
+                time.sleep(3)
+                continue
+            seed = int(job["seed"]) if job["seed"] else secrets.randbelow(2**32)
+            mid = job["model_id"] or MODELS.default_id()
+            if not mid:
+                fail(jid, "没有可用的模型(请先在 H3cApp 中安装并登记模型)"); continue
+            set_job(jid, stage="准备模型…")
             try:
-                msg = r.json().get("error", r.text)
-            except Exception:
-                msg = r.text
-            fail(jid, f"H3cApp 拒绝任务: {msg}"[:500]); continue
+                snap = MODELS.ensure_active(mid)            # GPU is idle here (checked above)
+                set_job(jid, model_info=json.dumps(snap, ensure_ascii=False))
+            except (ModelError, H3Error, httpx.HTTPError) as e:
+                fail(jid, f"模型切换失败(不会自动改用其他模型): {e}"[:500]); continue
+            try:
+                MODELS.validate_mode(mid, params.get("compute_mode") or "resident")
+            except ModelError as e:
+                fail(jid, f"计算模式不可用(不会自动改用其他模式): {e}"[:500]); continue
+            try:
+                r = h3("POST", "/api/generate", json=h3_body(params, seed))
+            except H3Error as e:
+                set_job(jid, note=str(e)); time.sleep(10); continue
+            if r.status_code == 409:
+                set_job(jid, note="H3cApp 正忙,等待中"); time.sleep(10); continue
+            if r.status_code not in (200, 202):
+                try:
+                    msg = r.json().get("error", r.text)
+                except Exception:
+                    msg = r.text
+                fail(jid, f"H3cApp 拒绝任务: {msg}"[:500]); continue
         t0 = time.time()
         set_job(jid, status="running", started_at=t0, seed=str(seed), note=None, stage="启动中")
         try:
@@ -681,12 +686,36 @@ async def thumb(jid: str):
 
 # Standalone upscaling reuses H3cApp's existing video-file API. It does not
 # load MiniMax H3, and the browser never supplies paths to the engine.
+ENGINE_START_LOCK = threading.RLock()  # shared launch gate for optional RIFE jobs
 from .upscale import register as register_upscale
-register_upscale(app, data_dir=DATA, authed=authed,
+UPSCALE = register_upscale(app, data_dir=DATA, authed=authed,
                  engine_call=lambda *a, **kw: h3(*a, **kw),
                  engine_status=lambda: h3_status(),
-                 ffprobe=FFPROBE, min_free_disk_gb=CFG["min_free_disk_gb"])
+                 ffprobe=FFPROBE, min_free_disk_gb=CFG["min_free_disk_gb"],
+                 engine_gate=ENGINE_START_LOCK,
+                 generation_busy=lambda: INTERPOLATION["busy"]() or bool(q(
+                     "SELECT 1 FROM jobs WHERE status='running' LIMIT 1")))
 
+
+# Optional HQ RIFE frame interpolation. It never replaces or modifies originals.
+from .interpolation import register as register_interpolation
+
+def _rife_source(jid: str) -> Path:
+    if not re.fullmatch(r"[0-9a-f]{32}", jid):
+        raise HTTPException(404, "Source job not found")
+    rows = q("SELECT status FROM jobs WHERE id=?", (jid,))
+    if not rows or rows[0]["status"] != "done":
+        raise HTTPException(409, "Only completed H3 videos can be interpolated")
+    return media(jid, "video", "video/mp4")
+
+INTERPOLATION = register_interpolation(
+    app, data_dir=DATA, authed=authed, video_for_job=_rife_source,
+    ffmpeg=FFMPEG, ffprobe=FFPROBE, min_free_disk_gb=CFG["min_free_disk_gb"],
+    engine_gate=ENGINE_START_LOCK,
+    generation_busy=lambda: bool(q(
+        "SELECT 1 FROM jobs WHERE status='running' LIMIT 1")) or
+        bool(h3_status().get("is_generating") or h3_status().get("upscaling_video")) or
+        UPSCALE["is_running"]())
 
 @app.get("/manifest.webmanifest", include_in_schema=False)
 async def pwa_manifest():

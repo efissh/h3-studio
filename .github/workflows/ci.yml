@@ -71,3 +71,14 @@ jobs:
         run: |
           bad=$(git log --all --name-only --pretty=format: | grep -E '\.(gguf|safetensors|cache|mp4|mov|sqlite|db|pem|key|dmg)$|(^|/)(api-token|config\.json|\.env)$' | sort -u || true)
           if [ -n "$bad" ]; then echo "forbidden files in history:"; echo "$bad"; exit 1; fi
+
+  rife-metal-build:
+    name: RIFE Metal HQ worker (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned RifeMetal Swift worker
+        run: |
+          cd tools/rife_stream
+          swift build -c release
+          test -x .build/release/h3-rife-stream

@@ -514,7 +514,7 @@ dialog .in{padding:18px 20px}
   <div class="scale-hint-copy"><strong id="scaleHintTitle">页面可能被浏览器缩小了</strong><span id="scaleHintText"></span><small id="scaleHintDiag"></small></div>
   <button class="sm" id="scaleHintClose" type="button">知道了</button>
 </div>
-<nav class="workspace-nav" aria-label="主导航"><button data-tab="gen" class="on">创作台</button><button data-tab="jobs">任务队列 <span id="cnt"></span></button><button data-tab="lib">作品库</button><button data-tab="up">AI 超分</button></nav>
+<nav class="workspace-nav" aria-label="主导航"><button data-tab="gen" class="on">创作台</button><button data-tab="jobs">任务队列 <span id="cnt"></span></button><button data-tab="lib">作品库</button><button data-tab="up">AI 超分</button><button data-tab="rife">AI 插帧 <span id="rifeUpdateDot" class="hide">●</span></button></nav>
 <main>
 <section id="tab-gen">
 <div class="workspace-heading"><div><span class="eyebrow">CREATIVE WORKSPACE / 01</span><h2>视频创作</h2><p>选择模型，设定镜头，然后交给本地 M5 Ultra。</p></div><span class="heading-note"><i></i> LOCAL RENDERING</span></div>
@@ -569,6 +569,29 @@ dialog .in{padding:18px 20px}
     <button class="pri" id="upRun">上传并开始超分</button><p class="warn" id="upError" role="alert"></p>
   </div>
   <h3>超分任务与下载</h3><div id="upJobs" aria-live="polite"></div>
+</section>
+
+<section id="tab-rife" class="hide">
+  <div class="workspace-heading"><div><span class="eyebrow">VIDEO INTERPOLATION / 05</span>
+    <h2>AI 插帧 · RIFE Metal</h2>
+    <p>从已完成的 H3 作品中选择原片，保持时长及声音，另存 HQ 高画质流畅版。</p></div></div>
+  <div class="card">
+    <div id="rifeAvailable" class="meta" role="status">正在检查本地 RIFE…</div>
+    <p id="rifeUpgrade" class="meta hide" role="status">
+      <strong>RIFE 有新版本可用</strong> · <span id="rifeVersion"></span>
+      · <a href="https://github.com/cinemore/rife-metal/releases" target="_blank" rel="noopener noreferrer">查看官方发布说明</a>
+      <span class="meta">（需要人工验证升级，不自动更换运行中的模型）</span>
+    </p>
+    <label for="rifeSource">选择已完成的 H3 作品</label>
+    <select id="rifeSource"><option value="">请先选择一个已完成视频</option></select>
+    <label for="rifeFPS">目标帧率（计算模式始终为 RIFE HQ 全分辨率）</label>
+    <select id="rifeFPS"><option value="60" selected>60 FPS · HQ（默认）</option>
+      <option value="48">48 FPS · HQ</option></select>
+    <p class="meta">生成后可选处理，不会自动占用 GPU；原始 MP4 不覆盖，保留原音频。新视频存放于独立作品目录。</p>
+    <button class="pri" id="rifeRun" type="button">开始 HQ 插帧</button>
+    <p class="warn" id="rifeError" role="alert"></p>
+  </div>
+  <h3>插帧任务与下载</h3><div id="rifeJobs" aria-live="polite"></div>
 </section>
 </main>
 </div>
@@ -654,12 +677,12 @@ function renderModels(){$('#models').innerHTML=MODELS.map(m=>`<label class="mcar
 
 function showLogin(){$('#app').classList.add('hide');$('#login').classList.remove('hide');clearInterval(timer)}
 async function boot(){const s=await fetch('/api/session').then(r=>r.json());if(!s.ok)return showLogin();
-  $('#login').classList.add('hide');$('#app').classList.remove('hide');scaleHintUpdate();refresh();timer=setInterval(refresh,2000)}
+  $('#login').classList.add('hide');$('#app').classList.remove('hide');scaleHintUpdate();refresh();loadRifeStatus();timer=setInterval(refresh,2000)}
 $('#loginBtn').onclick=async()=>{try{await api('/api/login',{json:{password:$('#pw').value}});$('#pw').value='';boot()}catch(e){$('#loginErr').textContent=e.message}};
 $('#pw').onkeydown=e=>{if(e.key==='Enter')$('#loginBtn').click()};
 $('#logout').onclick=async()=>{await api('/api/logout',{method:'POST'});showLogin()};
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x===b));
-  ['gen','jobs','lib','up'].forEach(t=>$('#tab-'+t).classList.toggle('hide',t!==b.dataset.tab));render();if(b.dataset.tab==='up'){loadUpMethods();loadUpJobs()}});
+  ['gen','jobs','lib','up','rife'].forEach(t=>$('#tab-'+t).classList.toggle('hide',t!==b.dataset.tab));render();if(b.dataset.tab==='up'){loadUpMethods();loadUpJobs()};if(b.dataset.tab==='rife'){loadRifeStatus();loadRifeSources();loadRifeJobs()}});
 
 document.querySelectorAll('[name=kind]').forEach(r=>r.onchange=()=>{const k=document.querySelector('[name=kind]:checked').value;
   $('#frames').classList.toggle('hide',k==='t2v');$('#lfBox').classList.toggle('hide',k!=='fl2v')});
@@ -740,6 +763,74 @@ async function upCancel(id){try{await api('/api/upscale/jobs/'+id+'/cancel',{met
 async function upDelete(id){if(!confirm('删除这项任务及其本地视频文件？'))return;
   try{await api('/api/upscale/jobs/'+id,{method:'DELETE'})}catch(e){$('#upError').textContent=e.message}loadUpJobs()}
 
+
+const RIFELABEL={queued:'排队中',running:'处理中',done:'完成',failed:'失败',cancelled:'已取消'};
+let rifeLastJobs=null,rifeStatusLoaded=false,rifeJobsLoading=false;
+function loadRifeSources(){
+  const opt=$('#rifeSource'),existing=opt.value;
+  const rows=(S?.recent||[]).filter(j=>j.status==='done');
+  opt.innerHTML='<option value="">请选择作品库视频</option>'+rows.map(j=>
+    '<option value="'+j.id+'">'+esc((j.prompt||'H3 视频').slice(0,75))+' · '+j.id.slice(0,8)+'</option>').join('');
+  if(rows.some(j=>j.id===existing))opt.value=existing;
+}
+async function loadRifeStatus(){
+  if(rifeStatusLoaded)return;
+  try{
+    const r=await api('/api/interpolate/status');
+    $('#rifeAvailable').textContent=r.available
+      ?'本机 RifeMetal v'+r.engine_version+'（模型 RIFE v'+r.model_version+'）· HQ 已就绪 · 手动升级'
+      :'尚未安装 RIFE Metal 工作进程。请先让 Claude 编译并验收本机引擎。';
+    $('#rifeRun').disabled=!r.available;
+    const newVersion=r.update?.update_available===true;
+    $('#rifeUpgrade').classList.toggle('hide',!newVersion);
+    $('#rifeUpdateDot').classList.toggle('hide',!newVersion);
+    if(newVersion)$('#rifeVersion').textContent='本机 '+r.engine_version+' → 官方 '+r.update.latest;
+    rifeStatusLoaded=true;
+  }catch(e){$('#rifeAvailable').textContent='RIFE 状态检查失败：'+e.message}
+}
+function rifeCard(j){
+  let html='<div class="card"><b>HQ '+j.fps+' FPS</b> · <span class="meta">'+esc(RIFELABEL[j.status]||j.status)+'</span>';
+  if(j.status==='queued'||j.status==='running'){
+    html+='<div class="bar"><i style="width:'+Math.round((j.progress||0)*100)+'%"></i></div>';
+    html+='<p class="meta">'+Math.round((j.progress||0)*100)+'% · '+esc(j.message||'')+'</p>';
+    html+='<button class="sm red" onclick="rifeCancel(\''+j.id+'\')">取消</button>';
+  }else if(j.status==='done'){
+    html+='<video controls playsinline preload="none" style="display:block;width:100%;max-width:680px;margin-top:12px;border-radius:9px" src="/api/interpolate/jobs/'+j.id+'/video"></video>';
+    html+='<p><a href="/api/interpolate/jobs/'+j.id+'/video?download=1">下载 HQ '+j.fps+'fps MP4</a></p>';
+  }else if(j.error)html+='<p class="warn">'+esc(j.error)+'</p>';
+  return html+'</div>';
+}
+async function loadRifeJobs(){
+  if(rifeJobsLoading)return;
+  rifeJobsLoading=true;
+  try{
+    const r=await api('/api/interpolate/jobs');
+    const snap=JSON.stringify(r.jobs.slice(0,30));
+    if(snap!==rifeLastJobs){rifeLastJobs=snap;
+      $('#rifeJobs').innerHTML=r.jobs.length?r.jobs.slice(0,30).map(rifeCard).join(''):'<div class="card meta">暂无插帧任务</div>';}
+  }catch(e){$('#rifeJobs').textContent='插帧任务读取失败：'+e.message}
+  finally{rifeJobsLoading=false}
+}
+$('#rifeRun').onclick=async()=>{
+  $('#rifeError').textContent='';
+  const jid=$('#rifeSource').value;
+  if(!jid){$('#rifeError').textContent='请先选择已完成的 H3 视频';return}
+  $('#rifeRun').disabled=true;
+  try{await api('/api/interpolate/from-job',{json:{job_id:jid,fps:Number($('#rifeFPS').value)}});
+    await loadRifeJobs();}
+  catch(e){$('#rifeError').textContent=e.message}
+  finally{$('#rifeRun').disabled=false}
+};
+async function rifeCancel(id){
+  try{await api('/api/interpolate/jobs/'+id+'/cancel',{method:'POST'})}
+  catch(e){$('#rifeError').textContent=e.message}
+  await loadRifeJobs();
+}
+setInterval(()=>{
+  if($('#tab-rife')&&!$('#tab-rife').classList.contains('hide')){
+    loadRifeJobs();loadRifeSources();
+  }
+},6000);
 function jobCard(j){const p=j.params;const run=j.status==='running',q=j.status==='queued';
   let h=`<div class="card"><div class="job"><div class="t"><b class="st-${j.status}">${ST[j.status]}</b> <span class="meta">${esc(mname(j.model_id,j))}${j.ab_group?' · A/B':''} · ${esc(p.size_profile)} · ${p.seconds}s · ${p.steps} steps · ${p.speed_mode}${p.compute_mode?' · '+(CM[p.compute_mode]||p.compute_mode):''} · M5 Fast ${p.fast_attention===true?'ON':'OFF'}${j.seed?' · seed '+j.seed:''}</span><p>${esc(j.prompt)}</p>`;
   if(run){const el=Date.now()/1000-j.started_at;h+=`<div class="bar"><i style="width:${Math.round((j.progress||0)*100)}%"></i></div><div class="meta">${Math.round((j.progress||0)*100)}% · ${esc(j.stage||'')} · 已用 ${fmt(el)}${j.eta!=null?' · 预计剩余 '+fmt(j.eta):''}</div>`}

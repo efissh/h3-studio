@@ -27,7 +27,8 @@ ID = re.compile(r"^[0-9a-f]{32}$")
 
 
 def register(app, *, data_dir, authed, engine_call, engine_status, ffprobe,
-             min_free_disk_gb=15):
+             min_free_disk_gb=15, engine_gate=None, generation_busy=lambda: False):
+    engine_gate = engine_gate or threading.RLock()
     root = Path(data_dir) / "upscale"
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(root, 0o700)
@@ -89,9 +90,14 @@ def register(app, *, data_dir, authed, engine_call, engine_status, ffprobe,
             if find(jid).get("cancel_requested"):
                 update(jid, status="cancelled", error="已取消")
                 return
-            resp = engine_call("POST", "/api/upscale-file",
-                               json={"path": str(source), "output": str(output),
-                                     "upscaler": job["method"], "scale": job["scale"]})
+            with engine_gate:
+                state = engine_status()
+                if (generation_busy() or state.get("is_generating") or
+                        state.get("upscaling_video")):
+                    raise RuntimeError("H3 GPU is busy; retry when it becomes idle")
+                resp = engine_call("POST", "/api/upscale-file",
+                                   json={"path": str(source), "output": str(output),
+                                         "upscaler": job["method"], "scale": job["scale"]})
             if resp.status_code not in (200, 202):
                 try:
                     reason = resp.json().get("error", resp.text)
@@ -278,3 +284,5 @@ def register(app, *, data_dir, authed, engine_call, engine_status, ffprobe,
             jobs.pop(jid)
         shutil.rmtree(root / jid, ignore_errors=True)
         return {"ok": True}
+
+    return {"is_running": lambda: active["id"] is not None}
