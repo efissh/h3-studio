@@ -758,9 +758,11 @@ $('#ab').onclick=async()=>{$('#goErr').textContent='';const av=MODELS.filter(m=>
 async function refresh(){
   if(stateInFlight||document.hidden||$('#app').classList.contains('hide'))return;
   stateInFlight=true;
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),12000);
   let success=false;
   try{
-    const live=await api('/api/state?compact=1');
+    const live=await api('/api/state?compact=1',{signal:controller.signal,cache:'no-store'});
     S={...live,recent:S?.recent||[]};
     success=true;
     render();
@@ -768,6 +770,7 @@ async function refresh(){
     if(!$('#tab-up').classList.contains('hide'))loadUpJobs();
   }catch(e){console.warn('H3 live status unavailable:',e.message)}
   finally{
+    clearTimeout(timeout);
     stateInFlight=false;
     const work=!!(S&&(S.active.length||(S.upscale_jobs||[]).some(j=>['queued','running'].includes(j.status))));
     scheduleState(!success?20000:work?5000:15000);
