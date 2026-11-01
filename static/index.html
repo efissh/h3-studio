@@ -778,7 +778,7 @@ async function loadRifeStatus(){
   try{
     const r=await api('/api/interpolate/status');
     $('#rifeAvailable').textContent=r.available
-      ?'本机 RifeMetal v'+r.engine_version+' · HQ 已就绪 · 手动升级'
+      ?'本机 RifeMetal v'+r.engine_version+'（模型 RIFE v'+r.model_version+'）· HQ 已就绪 · 手动升级'
       :'尚未安装 RIFE Metal 工作进程。请先让 Claude 编译并验收本机引擎。';
     $('#rifeRun').disabled=!r.available;
     const newVersion=r.update?.update_available===true;
