@@ -29,6 +29,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import migrations
+from .low_bandwidth import SelectiveJsonGZipMiddleware
 from .config import load_config
 from .util import sys_bin
 from .metrics import MetricsSampler
@@ -443,6 +444,10 @@ app.add_middleware(SessionMiddleware, secret_key=CFG["session_secret"], session_
                    max_age=14 * 86400, same_site="strict",
                    https_only=_secure_cookie())
 
+
+# HTTP response compression is only enabled for JSON GET endpoints.
+# Never gzip streaming video, thumbnails, or other FileResponse content.
+app.add_middleware(SelectiveJsonGZipMiddleware)
 
 @app.middleware("http")
 async def guard(request: Request, call_next):
