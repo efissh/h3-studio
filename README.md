@@ -19,7 +19,7 @@ model really ran, hardware telemetry, and installable PWA access from your phone
 
 | | |
 |---|---|
-| **Generate** | text-to-video, first-frame and first+last-frame image-to-video; duration, size, steps, seed, quality/fast modes, M5 Fast attention toggle |
+| **Generate** | text-to-video, first-frame and first+last-frame image-to-video; duration, size, steps, seed, quality/fast modes, M5 Fast attention toggle |\n| **AI video upscale** | New independent tab: upload ordinary MP4/MOV/M4V, use H3cApp's bundled Real-ESRGAN General/Anime or MetalFX, select 1.5×–4×, view progress and download the output separately |
 | **Queue** | strict FIFO, one H3 job at a time, progress/ETA, cancel, retry; survives restarts (a running job is re-adopted or marked failed, never falsely "done") |
 | **Library** | every result is saved *before* the next job starts: original MP4, thumbnail, browser-friendly H.264 preview, prompt, seed and all parameters; download and "generate again" |
 | **Models** | every model registered in H3cApp is listed automatically. Each job records which model ran; the app **verifies** the switch (API + the files the engine really has open). It never silently falls back to another model |
@@ -78,7 +78,7 @@ put it on the public internet and never use Tailscale *Funnel*. Read [`docs/SECU
 
 ## Documentation
 
-[Install](docs/INSTALL.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) · [Models and compute modes](docs/MODELS.md) · [INT8 cache](docs/INT8_CACHE.md) ·
+[Install](docs/INSTALL.md) · [AI video upscale](docs/VIDEO-UPSCALE.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) · [Models and compute modes](docs/MODELS.md) · [INT8 cache](docs/INT8_CACHE.md) ·
 [Remote access (optional)](docs/REMOTE-ACCESS.md) · [Security model](docs/SECURITY-MODEL.md) · [Developer guide](docs/DEVELOPER.md) ·
 [Localization](docs/LOCALIZATION.md) · [Foldable layout](docs/FOLDABLE.md) · [Licenses](docs/LICENSES.md) · [Third-party notices](THIRD_PARTY_NOTICES.md)
 
