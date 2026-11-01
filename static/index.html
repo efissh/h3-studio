@@ -684,7 +684,7 @@ $('#ab').onclick=async()=>{$('#goErr').textContent='';const av=MODELS.filter(m=>
 async function refresh(){try{S=await api('/api/state');render()}catch(e){}if(!$('#tab-up').classList.contains('hide'))loadUpJobs()}
 
 const UPLABEL={uploaded:'待开始',running:'处理中',done:'完成',failed:'失败',cancelled:'已取消'};
-let upLoading=false,upMethodsLoaded=false;
+let upLoading=false,upMethodsLoaded=false,upLastJobs=null;
 async function loadUpMethods(){
   if(upMethodsLoaded)return;
   try{
@@ -715,7 +715,7 @@ function upCard(j){
 async function loadUpJobs(){
   if(upLoading)return;
   upLoading=true;
-  try{const r=await api('/api/upscale/jobs');$('#upJobs').innerHTML=r.jobs.length?r.jobs.slice(0,20).map(upCard).join(''):'<div class="card meta">暂无超分任务</div>'}
+  try{const r=await api('/api/upscale/jobs');const snapshot=JSON.stringify(r.jobs.slice(0,20));if(snapshot!==upLastJobs){upLastJobs=snapshot;$('#upJobs').innerHTML=r.jobs.length?r.jobs.slice(0,20).map(upCard).join(''):'<div class="card meta">暂无超分任务</div>'}}
   catch(e){$('#upJobs').textContent='超分任务加载失败：'+e.message}finally{upLoading=false}
 }
 async function upStartExisting(id){
