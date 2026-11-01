@@ -386,7 +386,7 @@ def worker() -> None:
             s = h3_status()
         except H3Error as e:
             set_job(jid, note=str(e)); time.sleep(10); continue
-        if s.get("is_generating") or s.get("upscaling_video"):
+        if s.get("is_generating") or s.get("upscaling_video") or INTERPOLATION["busy"]():
             set_job(jid, note="H3cApp 正忙(生成或视频超分),等待中")
             time.sleep(10); continue
         if not str(s.get("engine_state")) == "ready":
@@ -681,12 +681,32 @@ async def thumb(jid: str):
 
 # Standalone upscaling reuses H3cApp's existing video-file API. It does not
 # load MiniMax H3, and the browser never supplies paths to the engine.
+ENGINE_START_LOCK = threading.RLock()  # shared launch gate for optional RIFE jobs
 from .upscale import register as register_upscale
 register_upscale(app, data_dir=DATA, authed=authed,
                  engine_call=lambda *a, **kw: h3(*a, **kw),
                  engine_status=lambda: h3_status(),
                  ffprobe=FFPROBE, min_free_disk_gb=CFG["min_free_disk_gb"])
 
+
+# Optional HQ RIFE frame interpolation. It never replaces or modifies originals.
+from .interpolation import register as register_interpolation
+
+def _rife_source(jid: str) -> Path:
+    if not re.fullmatch(r"[0-9a-f]{32}", jid):
+        raise HTTPException(404, "Source job not found")
+    rows = q("SELECT status FROM jobs WHERE id=?", (jid,))
+    if not rows or rows[0]["status"] != "done":
+        raise HTTPException(409, "Only completed H3 videos can be interpolated")
+    return media(jid, "video", "video/mp4")
+
+INTERPOLATION = register_interpolation(
+    app, data_dir=DATA, authed=authed, video_for_job=_rife_source,
+    ffmpeg=FFMPEG, ffprobe=FFPROBE, min_free_disk_gb=CFG["min_free_disk_gb"],
+    engine_gate=ENGINE_START_LOCK,
+    generation_busy=lambda: bool(q(
+        "SELECT 1 FROM jobs WHERE status='running' LIMIT 1")) or
+        bool(h3_status().get("is_generating") or h3_status().get("upscaling_video")))
 
 @app.get("/manifest.webmanifest", include_in_schema=False)
 async def pwa_manifest():
