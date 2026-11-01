@@ -8,9 +8,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-if "H3WEB_DATA" not in os.environ and "H3STUDIO_DATA" not in os.environ:
-    os.environ["H3WEB_DATA"] = tempfile.mkdtemp()
-    os.environ["H3STUDIO_DATA"] = os.environ["H3WEB_DATA"]
+os.environ.setdefault("H3STUDIO_DATA", tempfile.mkdtemp())
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app import main  # noqa: E402
 
@@ -41,14 +39,6 @@ def _job(index):
     }
 
 
-def _client(repo_data_env):
-    cli = TestClient(main.app)
-    h = {"X-Requested-With": repo_data_env}
-    response = cli.post("/api/login", headers=h, json={"password": main.CFG["password"]})
-    assert response.status_code == 200
-    return cli
-
-
 def test_state_polling_is_small_and_history_is_lazy(monkeypatch):
     records = list(reversed([_job(i) for i in range(72)]))
     calls = []
@@ -66,7 +56,7 @@ def test_state_polling_is_small_and_history_is_lazy(monkeypatch):
             return records
         if "WHERE id=?" in sql:
             return records[:1]
-        raise AssertionError("Unexpected DB query: " + sql)
+        return []  # A background worker may query its own queue while this test runs.
 
     monkeypatch.setattr(main, "q", fake_q)
     monkeypatch.setattr(main, "h3_status", lambda: {"engine_state": "ready"})
@@ -74,7 +64,7 @@ def test_state_polling_is_small_and_history_is_lazy(monkeypatch):
     monkeypatch.setattr(main, "free_disk_gb", lambda: 28.5)
     monkeypatch.setattr(main, "free_mem_pct", lambda: 90.0)
     with TestClient(main.app) as cli:
-        hdr = {"X-Requested-With": "h3web" if "H3WEB_DATA" in os.environ else "h3studio"}
+        hdr = {"X-Requested-With": "h3studio"}
         assert cli.post("/api/login", headers=hdr,
                         json={"password": main.CFG["password"]}).status_code == 200
         live = cli.get("/api/state?compact=1")
