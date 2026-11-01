@@ -37,7 +37,7 @@ def latest_release(fetch=None):
             req = urllib.request.Request(
                 RELEASE_API, headers={"User-Agent": "H3Studio-RIFE-Version-Check",
                                       "Accept": "application/vnd.github+json"})
-            with urllib.request.urlopen(req, timeout=4) as r:
+            with urllib.request.urlopen(req, timeout=4) as r:  # nosec B310 - fixed HTTPS GitHub API, not user-controlled
                 if r.status != 200 or int(r.headers.get("Content-Length") or 0) > 131072:
                     raise ValueError("Invalid release response")
                 return json.loads(r.read(131072))
